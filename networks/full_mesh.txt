@@ -1,0 +1,9 @@
+pilot_llama -> assistant_gpt
+pilot_llama -> assistant_gemini  
+pilot_llama -> pilot_claude
+pilot_claude -> assistant_gpt
+pilot_claude -> assistant_gemini
+assistant_gpt -> pilot_llama
+assistant_gpt -> pilot_claude
+assistant_gemini -> pilot_llama
+assistant_gemini -> pilot_claude

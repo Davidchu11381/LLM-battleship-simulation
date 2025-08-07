@@ -1,0 +1,173 @@
+{
+  "global_config": {
+    "max_turns_default": 3,
+    "timeout_seconds": 60,
+    "log_conversations": true,
+    "role_definitions": {
+      "leader": {
+        "description": "Team leader responsible for ship placement and strategy coordination",
+        "system_message_template": "You are {name}, the leader of {team_name}. Your leadership style is {leadership_style} with {risk_tolerance} risk tolerance. During ship placement, you make final decisions while considering team input {team_input_consideration}ly. During battle, coordinate with your team and make strategic decisions. Your assistant reliance is {assistant_reliance}. {additional_instructions}",
+        "default_params": {
+          "leadership_style": "collaborative",
+          "risk_tolerance": "medium",
+          "assistant_reliance": "medium",
+          "team_input_consideration": "high",
+          "temperature": 0.1,
+          "additional_instructions": "Lead your team to victory while maintaining good communication. STRICT LIMIT: 50 words maximum. Count your words. Be brief and direct."
+        },
+        "behavior": "leadership"
+      },
+      "player": {
+        "description": "Team member who follows leader's strategy and makes coordinate calls",
+        "system_message_template": "You are {name}, a player on {team_name}. Your strategy focus is {strategy_focus} with {risk_tolerance} risk tolerance. You rely on your assistant {assistant_reliance}ly and communicate in a {communication_style} style. Make coordinate calls based on your profile and team strategy. {additional_instructions}",
+        "default_params": {
+          "strategy_focus": "systematic",
+          "risk_tolerance": "medium", 
+          "assistant_reliance": "medium",
+          "communication_style": "clear",
+          "temperature": 0.1,
+          "additional_instructions": "Follow your team's strategy while contributing your unique perspective. STRICT LIMIT: 50 words maximum. Count your words. Be brief and direct."
+        },
+        "behavior": "strategic"
+      },
+      "assistant": {
+        "description": "AI advisor that suggests coordinates and provides tactical analysis",
+        "system_message_template": "You are {name}, a tactical assistant for {player_name}. Your specialization is {strategy_type} strategy with {suggestion_style} communication. Suggest coordinates using {coordinate_preference} approach. Always provide your reasoning. Format: 'COORDINATE: [letter][number] - REASONING: [explanation]'. {additional_instructions}",
+        "default_params": {
+          "strategy_type": "systematic",
+          "suggestion_style": "detailed_reasoning",
+          "coordinate_preference": "probability_based", 
+          "temperature": 0.1,
+          "additional_instructions": "Provide clear, actionable coordinate suggestions with logical reasoning. STRICT LIMIT: 50 words maximum. Count your words. Be brief and direct."
+        },
+        "behavior": "advisory"
+      },
+      "game_master": {
+        "description": "Manages game state, rules, and coordinates between teams",
+        "system_message_template": "You are the Battleship Game Master. Manage game state, enforce rules, track hits/misses, and coordinate between teams. Announce results clearly: 'HIT', 'MISS', 'SUNK: [ship_name]', or 'GAME OVER: [winning_team]'. {additional_instructions}",
+        "default_params": {
+          "temperature": 0.0,
+          "additional_instructions": "Maintain fair play and clear communication of game state."
+        },
+        "behavior": "authoritative"
+      },
+      "pilot": {
+        "description": "Assigns tasks and evaluates responses (for basic simulations)",
+        "system_message_template": "You are a {role} agent. You assign focused tasks to assistants (under {word_limit} words). After receiving their response, either ACCEPT it with praise, or CHALLENGE it by pointing out issues and asking for revision. Be specific about what needs improvement. {additional_instructions}",
+        "default_params": {
+          "word_limit": 50,
+          "temperature": 0.1,
+          "additional_instructions": "Focus on accuracy and completeness."
+        },
+        "behavior": "evaluative"
+      }
+    },
+    "provider_defaults": {
+      "ollama": {
+        "client_host": "http://localhost:11435",
+        "temperature": 1.0
+      },
+      "openai": {
+        "temperature": 1.0,
+        "max_tokens": 2000
+      },
+      "anthropic": {
+        "temperature": 0.1,
+        "max_tokens": 2000
+      },
+      "gemini": {
+        "temperature": 0.1
+      }
+    },
+    "api_keys": {
+      "openai": "YOUR_OPENAI_KEY_HERE",
+      "anthropic": "YOUR_CLAUDE_KEY_HERE",
+      "gemini": "YOUR_GEMINI_KEY_HERE"
+    }
+  },
+  "nodes": {
+    "leader_alpha": {
+      "name": "Commander Alpha",
+      "model": "gpt-4.1-2025-04-14",
+      "provider": "openai",
+      "role": "leader"
+    },
+    "player_a1": {
+      "name": "Analyst Alpha-1", 
+      "model": "gpt-4.1-2025-04-14",
+      "provider": "openai",
+      "role": "player"
+    },
+    "player_a2": {
+      "name": "Scout Alpha-2",
+      "model": "gpt-4.1-2025-04-14",
+      "provider": "openai", 
+      "role": "player"
+    },
+    "leader_bravo": {
+      "name": "Captain Bravo",
+      "model": "gpt-4.1-2025-04-14", 
+      "provider": "openai",
+      "role": "leader"
+    },
+    "player_b1": {
+      "name": "Coordinator Bravo-1",
+      "model": "gpt-4.1-2025-04-14",
+      "provider": "openai",
+      "role": "player"
+    },
+    "assistant_alpha_leader": {
+      "name": "Alpha Tactical AI",
+      "model": "llama3.1:8b",
+      "provider": "ollama",
+      "role": "assistant"
+    },
+    "assistant_a1": {
+      "name": "Alpha Analysis AI",
+      "model": "llama3.1:8b",
+      "provider": "ollama", 
+      "role": "assistant"
+    },
+    "assistant_bravo_leader": {
+      "name": "Bravo Strike AI",
+      "model": "llama3.1:8b",
+      "provider": "ollama",
+      "role": "assistant"
+    },
+    "assistant_b1": {
+      "name": "Bravo Support AI",
+      "model": "llama3.1:8b",
+      "provider": "ollama",
+      "role": "assistant"
+    },
+    "game_master": {
+      "name": "Battleship Game Master",
+      "model": "gpt-4.1-2025-04-14",
+      "provider": "openai",
+      "role": "game_master"
+    },
+    "pilot_test": {
+      "name": "Test Pilot",
+      "model": "gpt-4-1106-preview",
+      "provider": "openai",
+      "role": "pilot",
+      "specialization": {
+        "word_limit": 30,
+        "additional_instructions": "Keep instructions brief and clear."
+      }
+    },
+    "assistant_test": {
+      "name": "Test Assistant",
+      "model": "llama3.1:8b",
+      "provider": "ollama",
+      "role": "assistant",
+      "specialization": {
+        "player_name": "Test Pilot",
+        "strategy_type": "systematic",
+        "suggestion_style": "brief",
+        "coordinate_preference": "random",
+        "additional_instructions": "Provide simple responses for testing."
+      }
+    }
+  }
+}

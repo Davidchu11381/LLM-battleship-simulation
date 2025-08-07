@@ -1,0 +1,20 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# API Keys - NEVER UPLOAD THE REAL CONFIG
+LLM_config.json
+
+# Always upload the template
+!LLM_config_template.json
+
+# Personal output files (optional)
+output/*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp

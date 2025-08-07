@@ -1,0 +1,35 @@
+# Team Alpha internal communication
+leader_alpha -> player_a1
+leader_alpha -> player_a2
+player_a1 -> leader_alpha
+player_a1 -> player_a2
+player_a2 -> leader_alpha
+player_a2 -> player_a1
+
+# Team Bravo internal communication  
+leader_bravo -> player_b1
+player_b1 -> leader_bravo
+
+# AI Assistant connections
+leader_alpha -> assistant_alpha_leader
+assistant_alpha_leader -> leader_alpha
+player_a1 -> assistant_a1
+assistant_a1 -> player_a1
+leader_bravo -> assistant_bravo_leader
+assistant_bravo_leader -> leader_bravo
+player_b1 -> assistant_b1
+assistant_b1 -> player_b1
+
+# Game Master connections (you had these)
+game_master -> leader_alpha
+game_master -> player_a1
+game_master -> player_a2
+game_master -> leader_bravo
+game_master -> player_b1
+
+# Reverse connections for responses (you had these)
+leader_alpha -> game_master
+player_a1 -> game_master
+player_a2 -> game_master
+leader_bravo -> game_master
+player_b1 -> game_master
