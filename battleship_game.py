@@ -195,6 +195,7 @@ class GameMaster:
         
         return announcement
     
+    
     async def announce_round_results(self, team_id: str, round_results: List[str]):
         """Share round results - programmatic only"""
         team = self.game.state.teams[team_id]
@@ -318,6 +319,28 @@ class BattleshipGame:
         number = str(col + 1)
         return f"{letter}{number}"
     
+    def _get_team_ship_positions(self, team_id: str) -> List[str]:
+        """Get list of coordinates where team's own ships are located"""
+        if team_id not in self.state.teams:
+            return []
+        
+        team = self.state.teams[team_id]
+        ship_positions = []
+        
+        for ship in team.grid.ships:
+            for position in ship.positions:
+                coordinate = self.position_to_coordinate(position)
+                ship_positions.append(coordinate)
+        
+        return sorted(ship_positions)
+
+    def _get_player_team_id(self, player_id: str) -> Optional[str]:
+        """Find which team a player belongs to"""
+        for team_id, team in self.state.teams.items():
+            if player_id in team.members:
+                return team_id
+        return None
+    
     async def start_game(self):
         """Start the battleship game"""
         await self._log_game_event("GAME_START", "Battleship game beginning")
@@ -412,16 +435,23 @@ class BattleshipGame:
             # Optional: Leader could announce decision in a real implementation
             # For simulation, we skip the decision announcement to avoid extra messages
 
-    # Add this to your BattleshipGame class:
 
     async def _send_battle_message(self, sender: str, recipient: str, question: str):
         """
-        Send a tactical question during battle, instructing
-        the recipient to reply in the COORDINATE:[X] format.
+        Send a tactical question during battle - ENHANCED with ship awareness
         """
+        # Get forbidden coordinates
+        all_attempted = self._get_all_attempted_coordinates()
+        
+        # Get own team's ship positions
+        team_id = self._get_player_team_id(sender)
+        own_ships = self._get_team_ship_positions(team_id) if team_id else []
+        
         prompt = (
             f"{question}\n\n"
-            "Suggest coordinate for attack.\n"
+            f"FORBIDDEN COORDINATES: {', '.join(all_attempted) if all_attempted else 'None yet'}\n"
+            f"OWN SHIP LOCATIONS: {', '.join(own_ships) if own_ships else 'None'} (Don't attack these!)\n\n"
+            "Suggest ENEMY coordinate for attack. Avoid forbidden coordinates and own ships.\n"
             "Format: COORDINATE: [A1] - REASONING: [why]\n"
             "Maximum 25 words."
         )
@@ -444,12 +474,9 @@ class BattleshipGame:
         return profile.get('leadership_style', 'collaborative')
 
     async def _send_clean_message(self, sender: str, recipient: str, message: str):
-        """Send clean message without generic prompts"""    
+        """Send clean message without generic prompts - UPDATED for ship placement"""    
         try:
-            # NO "Give your tactical input" or other generic crap
-            # Just send the actual question/message
-    
-            
+            # For ship placement, no forbidden coordinates needed
             clean_message = f"{message}\n\nReminder: Maximum 50 words."
             
             await self.network.send_message(
@@ -595,35 +622,44 @@ class BattleshipGame:
             await self._team_consultation(player_id, team_id)
 
     async def _consult_ai_assistant(self, player_id: str):
-        """Player consults with their AI assistant - CLEAN"""
+        """Player consults with their AI assistant - ENHANCED with ship awareness"""
         agent_assignment = self.config['agent_assignments'].get(player_id, {})
         assistant_id = agent_assignment.get('assistant_id')
         
         if not assistant_id or not agent_assignment.get('has_assistant', False):
             return
         
-        # Get current game context
+        # Get current game context (now includes own ship positions)
         game_context = self._build_game_context_for_player(player_id)
         
-        # CLEAN assistant prompt - no fluff
+        # Get forbidden coordinates (already attempted)
+        all_attempted = self._get_all_attempted_coordinates()
+        
+        # Get own team's ship positions (don't attack your own ships!)
+        team_id = self._get_player_team_id(player_id)
+        own_ships = self._get_team_ship_positions(team_id) if team_id else []
+        
+        # ENHANCED assistant prompt
         consultation_prompt = f"""Battle situation:
-{game_context}
+    {game_context}
 
-Suggest coordinate for attack.
-Format: COORDINATE: [A1] - REASONING: [why]
-Maximum 25 words."""
+    FORBIDDEN COORDINATES: {', '.join(all_attempted) if all_attempted else 'None yet'}
+    OWN SHIP LOCATIONS: {', '.join(own_ships) if own_ships else 'None'} (Don't attack these!)
+
+    Suggest ENEMY coordinate for attack. Avoid forbidden coordinates and own ships.
+    Format: COORDINATE: [A1] - REASONING: [why]
+    Maximum 25 words."""
         
         try:
-            # FIXED: Player asks assistant, assistant responds
             await self.network.send_message(
-                sender_id=player_id,        # Player asks
-                receiver_id=assistant_id,   # Assistant responds
+                sender_id=player_id,
+                receiver_id=assistant_id,
                 message=consultation_prompt,
-                max_turns=1  # Single exchange
+                max_turns=1
             )
             
             logger.info(f"[BATTLE] [R{self.state.round_number}] {player_id} consulted {assistant_id}")
-                                          
+                                        
         except Exception as e:
             logger.error(f"Failed AI consultation for {player_id}: {e}")
     
@@ -672,22 +708,19 @@ Maximum 25 words."""
     
     def _generate_battle_questions(self, team_id: str, active_player: str) -> List[str]:
         """Generate tactical questions without giving away coordinates"""
-        recent_team_coords = self._get_recent_team_coords(team_id)
+        all_attempted = self._get_all_attempted_coordinates()
         
-        if not recent_team_coords:
-            # Early game questions
+        if len(all_attempted) < 3:
             questions = [
-                "Should I target center areas or corners first?",  # No coordinates!
+                "Should I target center areas or edges first?",
                 "Go systematic or random hunting?"
             ]
-        elif len(recent_team_coords) < 5:
-            # Mid-game questions  
+        elif len(all_attempted) < 8:
             questions = [
-                "Continue current search pattern or switch zones?",
-                "Focus on unexplored areas or follow up on hits?"  # No coordinates!
+                "Continue current search pattern or switch zones?", 
+                "Focus on unexplored areas or follow up on hits?"
             ]
         else:
-            # Late game questions
             questions = [
                 "Any patterns you noticed in their ship placement?",
                 "Should I target near previous hits or try new area?"
@@ -695,43 +728,17 @@ Maximum 25 words."""
         
         return questions[:2]
 
-    def _get_strategic_coordinates(self, team_id: str) -> List[str]:
-        """Generate strategic coordinate suggestions based on game state"""
-        # Dynamic coordinate suggestions that change based on what's been tried
-        all_tried = []
-        team = self.state.teams.get(team_id)
-        if team:
-            for member in team.members:
-                if member in self.coordinate_history:
-                    all_tried.extend(self.coordinate_history[member])
-        
-        # Different coordinate pools based on game progression
-        if len(all_tried) < 3:
-            # Early game - center and corners
-            strategies = ["E5", "C3", "G7", "B8", "F4"]
-        elif len(all_tried) < 8:
-            # Mid game - systematic patterns
-            strategies = ["A1", "J10", "D6", "H4", "B9"]  
-        else:
-            # Late game - remaining high-value targets
-            strategies = ["F2", "C9", "I5", "A7", "H8"]
-        
-        # Filter out already tried coordinates
-        available = [coord for coord in strategies if coord not in all_tried]
-        
-        # If all strategic coords tried, generate random ones
-        if not available:
-            import string
-            available = []
-            for i in range(5):
-                row = random.choice(string.ascii_uppercase[:10])  # A-J
-                col = random.randint(1, 10)
-                coord = f"{row}{col}"
-                if coord not in all_tried:
-                    available.append(coord)
-        
-        return available[:3]  # Return top 3 suggestions
 
+    def _get_all_valid_coordinates(self, attempted_coords: List[str]) -> List[str]:
+        """Get all valid coordinates excluding already attempted ones"""
+        valid_coords = []
+        for row in range(self.grid_size[0]):
+            for col in range(self.grid_size[1]):
+                coord = self.position_to_coordinate((row, col))
+                if coord not in attempted_coords:
+                    valid_coords.append(coord)
+        return valid_coords
+    
     def _count_recent_hits(self, player_id: str) -> int:
         """Count recent hits for context (placeholder implementation)"""
         return len(self.coordinate_history.get(player_id, [])) % 3
@@ -751,142 +758,6 @@ Maximum 25 words."""
                     all_attempted.update(self.coordinate_history[member])
         return sorted(list(all_attempted))
 
-    def _simulate_coordinate_choice(self, player_id: str, team_id: str) -> str:
-        """Extract coordinate based on player personality and conversations"""
-        
-        # Get all attempted coordinates to avoid duplicates
-        all_attempted_coords = self._get_all_attempted_coordinates()
-        
-        # Get player personality traits
-        player_config = self.config['agent_assignments'].get(player_id, {})
-        profile = self.config['player_profiles'].get(player_config.get('profile', ''), {})
-        
-        assistant_reliance = profile.get('assistant_reliance', 'medium')
-        decision_speed = profile.get('decision_speed', 'medium')
-        leadership_style = profile.get('leadership_style', 'collaborative')
-        
-        logger.info(f"[COORD_CHOICE] {player_id} personality: reliance={assistant_reliance}, speed={decision_speed}")
-        logger.info(f"[COORD_CHOICE] {player_id} avoiding {len(all_attempted_coords)} already attempted: {all_attempted_coords}")
-        
-        # Fast decision makers ignore advice and go with instinct
-        if decision_speed == 'fast':
-            logger.info(f"[COORD_CHOICE] {player_id} making fast instinctual decision")
-            return self._generate_instinctual_coordinate(player_id, all_attempted_coords)
-        
-        # Try to extract coordinate from recent conversations based on personality
-        if hasattr(self.network, 'conversation_history'):
-            recent_conversations = [
-                conv for conv in self.network.conversation_history[-8:]  # Last 8 conversations
-                if conv.get('receiver') == player_id or conv.get('sender') == player_id
-            ]
-            
-            # High AI reliance: Strongly prefer AI assistant advice
-            if assistant_reliance == 'high':
-                for conv in reversed(recent_conversations):
-                    if conv.get('sender', '').startswith('assistant_'):
-                        coordinate = self._extract_coordinate_from_message(conv)
-                        if coordinate and coordinate not in all_attempted_coords:
-                            logger.info(f"[COORD_CHOICE] {player_id} (high AI reliance) using AI suggestion: {coordinate}")
-                            return coordinate
-                
-                # If no AI advice available, reluctantly consider team input
-                logger.info(f"[COORD_CHOICE] {player_id} found no valid AI advice, reluctantly considering team")
-                
-            # Low AI reliance: Prefer team input, ignore AI
-            elif assistant_reliance == 'low':
-                # Look for team suggestions (ignore AI)
-                team_suggestions = []
-                for conv in reversed(recent_conversations):
-                    if not conv.get('sender', '').startswith('assistant_'):
-                        coordinate = self._extract_coordinate_from_message(conv)
-                        if coordinate and coordinate not in all_attempted_coords:
-                            team_suggestions.append(coordinate)
-                
-                if team_suggestions:
-                    chosen = team_suggestions[0]  # Take first valid team suggestion
-                    logger.info(f"[COORD_CHOICE] {player_id} (low AI reliance) using team suggestion: {chosen}")
-                    return chosen
-                
-                logger.info(f"[COORD_CHOICE] {player_id} found no valid team suggestions, going with instinct")
-                
-            # Medium reliance: Consider both, with personality-based weighting
-            else:
-                ai_suggestions = []
-                team_suggestions = []
-                
-                for conv in reversed(recent_conversations):
-                    coordinate = self._extract_coordinate_from_message(conv)
-                    if coordinate and coordinate not in all_attempted_coords:
-                        if conv.get('sender', '').startswith('assistant_'):
-                            ai_suggestions.append(coordinate)
-                        else:
-                            team_suggestions.append(coordinate)
-                
-                # Balanced approach - consider both
-                if ai_suggestions and team_suggestions:
-                    # For collaborative leaders, prefer team consensus
-                    if leadership_style == 'collaborative' and len(team_suggestions) > 1:
-                        chosen = team_suggestions[0]
-                        logger.info(f"[COORD_CHOICE] {player_id} (collaborative) choosing team consensus: {chosen}")
-                        return chosen
-                    # For authoritative leaders, prefer AI analysis  
-                    elif leadership_style == 'authoritative' and ai_suggestions:
-                        chosen = ai_suggestions[0]
-                        logger.info(f"[COORD_CHOICE] {player_id} (authoritative) choosing AI analysis: {chosen}")
-                        return chosen
-                    # Default: AI first for medium reliance
-                    else:
-                        chosen = ai_suggestions[0]
-                        logger.info(f"[COORD_CHOICE] {player_id} (medium reliance) choosing AI suggestion: {chosen}")
-                        return chosen
-                
-                elif ai_suggestions:
-                    chosen = ai_suggestions[0]
-                    logger.info(f"[COORD_CHOICE] {player_id} using available AI suggestion: {chosen}")
-                    return chosen
-                
-                elif team_suggestions:
-                    chosen = team_suggestions[0]
-                    logger.info(f"[COORD_CHOICE] {player_id} using available team suggestion: {chosen}")
-                    return chosen
-        
-        # Personality-based fallback if no suggestions found
-        logger.info(f"[COORD_CHOICE] {player_id} no valid suggestions found, using personality-based fallback")
-        return self._generate_personality_based_coordinate(player_id, profile, all_attempted_coords)
-    
-    def _generate_instinctual_coordinate(self, player_id: str, avoid_coords: List[str]) -> str:
-        """Generate coordinate for fast/instinctual players"""
-        # Fast players prefer corners and edges (quick, aggressive moves)
-        aggressive_targets = ["A1", "A10", "J1", "J10", "A5", "J5", "E1", "E10"]
-        
-        for coord in aggressive_targets:
-            if coord not in avoid_coords:
-                return coord
-        
-        # Fallback to random
-        return self._generate_random_coordinate(player_id, avoid_coords)
-    
-    def _generate_personality_based_coordinate(self, player_id: str, profile: Dict, avoid_coords: List[str]) -> str:
-        """Generate coordinate based on player personality when no advice available"""
-        risk_tolerance = profile.get('risk_tolerance', 'medium')
-        strategy_focus = profile.get('strategy_focus', 'balanced')
-        
-        if risk_tolerance == 'high':
-            # High risk: target center areas
-            high_risk_coords = ["E5", "F5", "D5", "E6", "F6", "D6", "E4", "F4"]
-        elif risk_tolerance == 'low':
-            # Low risk: systematic edge approach  
-            high_risk_coords = ["A1", "A2", "B1", "I1", "J1", "J2", "I10", "J10"]
-        else:
-            # Medium risk: balanced approach
-            high_risk_coords = ["C3", "C7", "G3", "G7", "D4", "F4", "D6", "F6"]
-        
-        for coord in high_risk_coords:
-            if coord not in avoid_coords:
-                logger.info(f"[COORD_CHOICE] {player_id} using {risk_tolerance}-risk strategy: {coord}")
-                return coord
-        
-        return self._generate_random_coordinate(player_id, avoid_coords)
     
     def _generate_random_coordinate(self, player_id: str, avoid_coords: List[str]) -> str:
         """Generate random coordinate avoiding already attempted coordinates"""
@@ -942,26 +813,6 @@ Maximum 25 words."""
                 return m.group(1)
 
         return None
-
-    
-    # def _parse_coordinate_from_text(self, text: str) -> Optional[str]:
-    #     """Parse coordinate from text using regex"""
-    #     import re
-        
-    #     # Look for COORDINATE: [A1] format first
-    #     coordinate_pattern = r'COORDINATE:\s*\[?([A-J][1-9]|[A-J]10)\]?'
-    #     match = re.search(coordinate_pattern, text)
-    #     if match:
-    #         return match.group(1)
-        
-    #     # Look for standalone coordinates like "E5", "D4", etc.
-    #     standalone_pattern = r'\b([A-J][1-9]|[A-J]10)\b'
-    #     matches = re.findall(standalone_pattern, text)
-    #     if matches:
-    #         # Return first valid coordinate found
-    #         return matches[0]
-        
-    #     return None
     
     def _parse_coordinate_from_text(self, text: str) -> Optional[str]:
         import re
@@ -1030,56 +881,43 @@ Maximum 25 words."""
     
     async def _player_coordinate_call(self, player_id: str, team_id: str) -> Optional[str]:
         """
-        Player makes final coordinate call, after gathering all assistant and teammate advice,
-        then brainstorming and deciding according to their profile.
+        ENHANCED: AI coordinate decision with own ship awareness
         """
-        # 1. Load the player's profile to know how they prioritize inputs
         assignment = self.config['agent_assignments'].get(player_id, {})
         profile_name = assignment.get('profile', '')
         profile = self.config['player_profiles'].get(profile_name, {})
 
-        # 2. Gather all advice this turn (assistant + teammates)
         advice_summary = self._consolidate_advice_for_player(player_id)
-
-        # 3. Build the shared game context
-        game_context = self._build_game_context_for_player(player_id)
-        
-        # 🔥 4. NEW: Get agent's accumulated battlefield memory
+        game_context = self._build_game_context_for_player(player_id)  # Now includes own ships
         memory_context = self._build_memory_context(player_id)
-
-        # 5. Incorporate profile-driven instructions
+        all_attempted = self._get_all_attempted_coordinates()
+        
+        # Get own team's ship positions
+        own_ships = self._get_team_ship_positions(team_id)
+        
         profile_desc = profile.get('description', '')
         reliance = profile.get('assistant_reliance', 'medium')
 
-        # 6. Construct the decision prompt WITH memory context
-        header = f"COORDINATE DECISION TIME (Profile: {profile_desc})"
-        if advice_summary:
-            decision_prompt = f"""{header}
+        # ENHANCED decision prompt with ship awareness
+        decision_prompt = f"""COORDINATE SELECTION - {profile_desc}
 
     {game_context}
 
     {memory_context}
 
-    ADVICE RECEIVED THIS TURN:
-    {advice_summary}
+    FORBIDDEN: {', '.join(all_attempted) if all_attempted else 'None yet'}
+    OWN SHIPS: {', '.join(own_ships) if own_ships else 'None'} (Don't attack these!)
 
-    As a {profile_name.replace('_', ' ')}, you should {"prioritize AI suggestions" if reliance=="high" else "weigh team input" if reliance=="low" else "balance AI and team input"}.
-    Based on your battlefield memory and advice above, choose your attack coordinate.
-    CRITICAL: Avoid coordinates already attempted by anyone (check battlefield memory).
-    Format: COORDINATE: [A1] - REASONING: [why]
-    Maximum 50 words."""
-        else:
-            decision_prompt = f"""{header}
+    ADVICE RECEIVED:
+    {advice_summary if advice_summary else 'No advice - use your judgment'}
 
-    {game_context}
+    PROFILE: {profile_name.replace('_', ' ')}
+    - Assistant reliance: {reliance}
+    - Risk tolerance: {profile.get('risk_tolerance', 'medium')}  
+    - Decision speed: {profile.get('decision_speed', 'medium')}
 
-    {memory_context}
-
-    No advice received this turn.
-    Based on your battlefield memory, choose your attack coordinate.
-    CRITICAL: Avoid coordinates already attempted (check memory above).
-    Format: COORDINATE: [A1] - REASONING: [why]
-    Maximum 50 words."""
+    Choose ENEMY coordinate to attack. Avoid forbidden coordinates and own ships.
+    REQUIRED FORMAT: COORDINATE: [X#]"""
 
         try:
             conv = await self.network.send_message(
@@ -1089,21 +927,70 @@ Maximum 25 words."""
                 max_turns=1
             )
 
-            # Try to parse the agent's reply
             coordinate = self._extract_coordinate_from_message(conv)
-            if coordinate:
-                logger.info(f"[COORD_CALL] {player_id} chose via LLM: {coordinate}")
+            
+            # Validate coordinate is not own ship or forbidden
+            if coordinate and coordinate not in all_attempted and coordinate not in own_ships:
+                logger.info(f"[AI_DECISION] {player_id} chose: {coordinate}")
                 return coordinate
-
-            # Fallback if no valid coordinate found
-            fallback = self._simulate_coordinate_choice(player_id, team_id)
-            logger.info(f"[COORD_CALL] {player_id} fallback to personality logic: {fallback}")
-            return fallback
+            
+            # ENHANCED retry with ship awareness
+            if coordinate in all_attempted or coordinate in own_ships:
+                issue = "forbidden" if coordinate in all_attempted else "your own ship"
+                logger.warning(f"[AI_DECISION] {player_id} chose {issue} {coordinate}, retrying")
+                
+                retry_prompt = f"""RETRY: Your choice {coordinate} is {issue}.
+    FORBIDDEN: {', '.join(all_attempted)}
+    OWN SHIPS: {', '.join(own_ships)} (Don't attack these!)
+    Choose a DIFFERENT ENEMY coordinate.
+    FORMAT: COORDINATE: [X#]"""
+                
+                retry_conv = await self.network.send_message(
+                    sender_id="game_master",
+                    receiver_id=player_id,
+                    message=retry_prompt,
+                    max_turns=1
+                )
+                
+                retry_coordinate = self._extract_coordinate_from_message(retry_conv)
+                if (retry_coordinate and 
+                    retry_coordinate not in all_attempted and 
+                    retry_coordinate not in own_ships):
+                    logger.info(f"[AI_DECISION] {player_id} retry success: {retry_coordinate}")
+                    return retry_coordinate
 
         except Exception as e:
-            logger.error(f"[COORD_CALL] Error for {player_id}: {e}")
-            return self._simulate_coordinate_choice(player_id, team_id)
+            logger.error(f"[AI_DECISION] {player_id} failed: {e}")
 
+        # FINAL FALLBACK: Valid coordinate that's not own ship
+        return self._get_emergency_coordinate(player_id, all_attempted, own_ships)
+
+    
+    def _get_emergency_coordinate(self, player_id: str, all_attempted: List[str], own_ships: List[str] = None) -> str:
+        """
+        ENHANCED: Emergency coordinate avoiding own ships too
+        """
+        if own_ships is None:
+            own_ships = []
+        
+        avoid_coords = set(all_attempted + own_ships)
+        valid_coords = []
+        
+        for row in range(self.grid_size[0]):
+            for col in range(self.grid_size[1]):
+                coord = self.position_to_coordinate((row, col))
+                if coord not in avoid_coords:
+                    valid_coords.append(coord)
+        
+        if not valid_coords:
+            logger.error(f"[EMERGENCY] No valid coordinates remaining!")
+            return "A1"  # Should never happen
+        
+        # Pick random valid coordinate
+        import random
+        chosen = random.choice(valid_coords)
+        logger.warning(f"[EMERGENCY] {player_id} emergency fallback: {chosen}")
+        return chosen
     
     async def _execute_attack(self, player_id: str, team_id: str, coordinate: str):
         """Execute the attack and report results"""
@@ -1351,12 +1238,8 @@ Strategic note: Use this intel to avoid already-attempted coordinates."""
         logger.info(f"[INTEL] Successfully injected intel into {successful_injections}/{len(agent_ids)} agents")
     
     def _build_game_context_for_player(self, player_id: str) -> str:
-        """Build current game context for a player"""
-        team_id = None
-        for tid, team in self.state.teams.items():
-            if player_id in team.members:
-                team_id = tid
-                break
+        """Build current game context for a player - ENHANCED with own ship positions"""
+        team_id = self._get_player_team_id(player_id)
         
         if not team_id:
             return "Game context unavailable"
@@ -1371,13 +1254,17 @@ Strategic note: Use this intel to avoid already-attempted coordinates."""
                 opponent_team = t
                 break
         
+        # Get own ship positions
+        own_ship_positions = self._get_team_ship_positions(team_id)
+        
         context = f"""Round: {self.state.round_number}
-Your Team: {team.name}
-Opponent: {opponent_team.name if opponent_team else 'Unknown'}
+    Your Team: {team.name}
+    Opponent: {opponent_team.name if opponent_team else 'Unknown'}
 
-Your Previous Coordinates: {', '.join(self.coordinate_history.get(player_id, []))}
+    Your Previous Coordinates: {', '.join(self.coordinate_history.get(player_id, []))}
+    Your Team's Ship Locations: {', '.join(own_ship_positions)}
 
-Grid: {self.grid_size[0]}x{self.grid_size[1]} (A1 to {chr(ord('A') + self.grid_size[0] - 1)}{self.grid_size[1]})"""
+    Grid: {self.grid_size[0]}x{self.grid_size[1]} (A1 to {chr(ord('A') + self.grid_size[0] - 1)}{self.grid_size[1]})"""
         
         return context
     
