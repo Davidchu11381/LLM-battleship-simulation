@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Battleship Game Runner
+Simultaneous Battleship Game Runner
 
-Main script to run battleship simulations using the agent network framework.
+Main script to run simultaneous battleship simulations with individual ship ownership,
+dual action space (BOMB/MOVE), and 3-phase Alpha coordination vs Beta individual decisions.
 """
 
 import asyncio
@@ -15,64 +16,29 @@ from pathlib import Path
 # Add the parent directory to the path to import modules
 sys.path.append(str(Path(__file__).parent))
 
-from agent_network import AgentNetwork, NetworkConfig
-from battleship_game import run_battleship_simulation
-
-
-def create_sample_battleship_network():
-    """Create a sample network topology file for battleship"""
-    sample_edges = [
-        "# Battleship Network Topology",
-        "# Team Alpha internal communication",
-        "leader_alpha -> player_a1",
-        "leader_alpha -> player_a2",
-        "player_a1 -> leader_alpha",
-        "player_a1 -> player_a2",
-        "player_a2 -> leader_alpha",
-        "player_a2 -> player_a1",
-        "",
-        "# Team Bravo internal communication",
-        "leader_bravo -> player_b1",
-        "player_b1 -> leader_bravo",
-        "",
-        "# AI Assistant connections",
-        "assistant_alpha_leader -> leader_alpha",
-        "assistant_a1 -> player_a1",
-        "assistant_bravo_leader -> leader_bravo",
-        "assistant_b1 -> player_b1",
-        "",
-        "# Game Master connections (can communicate with all players)",
-        "game_master -> leader_alpha",
-        "game_master -> player_a1",
-        "game_master -> player_a2",
-        "game_master -> leader_bravo",
-        "game_master -> player_b1"
-    ]
-    
-    networks_dir = Path("networks")
-    networks_dir.mkdir(exist_ok=True)
-    
-    with open(networks_dir / "battleship.txt", "w") as f:
-        f.write("\n".join(sample_edges))
-    
-    print(f"📝 Created sample battleship network: {networks_dir / 'battleship.txt'}")
+from agent_network import create_battleship_network
+from battleship_game import run_simultaneous_battleship_simulation
 
 
 async def main():
-    """Main battleship game runner"""
-    parser = argparse.ArgumentParser(description='Run Battleship Agent Network Simulation')
+    """Main simultaneous battleship game runner"""
+    parser = argparse.ArgumentParser(description='Run Simultaneous Battleship Agent Network Simulation')
     parser.add_argument('--llm-config', type=str, default='LLM_config.json',
                         help='Path to LLM configuration file (default: LLM_config.json)')
     parser.add_argument('--battleship-config', type=str, default='battleship_config.json',
                         help='Path to battleship configuration file (default: battleship_config.json)')
-    parser.add_argument('--edges', type=str, default=None,
-                        help='Network topology file (optional)')
+    parser.add_argument('--edges', type=str, default='networks/battleship.txt',
+                        help='Network topology file (default: networks/battleship.txt)')
+    parser.add_argument('--seed', type=int, default=None,
+                        help='Random seed for reproducible ship assignments')
     parser.add_argument('--verbose', action='store_true',
                         help='Enable verbose logging')
+    parser.add_argument('--export-memories', action='store_true',
+                        help='Export agent memories after game completion')
     args = parser.parse_args()
     
-    print("⚔️  BATTLESHIP AGENT NETWORK SIMULATION")
-    print("=" * 50)
+    print("🎮 SIMULTANEOUS BATTLESHIP AGENT NETWORK SIMULATION")
+    print("=" * 60)
     
     # Verify config files exist
     if not Path(args.llm_config).exists():
@@ -81,118 +47,221 @@ async def main():
     if not Path(args.battleship_config).exists():
         print(f"❌ Battleship config file '{args.battleship_config}' not found!")
         return
+    if not Path(args.edges).exists():
+        print(f"❌ Network topology file '{args.edges}' not found!")
+        print(f"💡 Create {args.edges} with proper Alpha/Beta communication rules")
+        return
     
     try:
-        # 1️⃣ Load both configs
+        # 1️⃣ Load configurations
         print(f"📄 Loading LLM configuration from {args.llm_config}...")
-        with open(args.llm_config) as f:
-            llm_cfg = json.load(f)
-        
         print(f"📄 Loading battleship configuration from {args.battleship_config}...")
+        print(f"📄 Loading network topology from {args.edges}...")
+        
         with open(args.battleship_config) as f:
             game_cfg = json.load(f)
         
-        # 2️⃣ Merge each agent’s battleship profile into its LLM specialization
-        for agent_id, assignment in game_cfg["agent_assignments"].items():
-            profile = game_cfg["player_profiles"][assignment["profile"]]
-            node = llm_cfg.setdefault("nodes", {}).setdefault(agent_id, {})
-            spec = node.setdefault("specialization", {})
-            spec.update(profile)
-            # also inject team_name
-            for team in game_cfg["team_config"].values():
-                if agent_id in team["members"]:
-                    spec["team_name"] = team["name"]
-                    break
+        # 2️⃣ Validate simultaneous battleship configuration
+        team_config = game_cfg.get('team_config', {})
+        alpha_members = team_config.get('team_a', {}).get('members', [])
+        beta_members = team_config.get('team_b', {}).get('members', [])
         
-        # 3️⃣ Parse edges (either provided or sample)
-        if args.edges:
-            edges = NetworkConfig._load_edges_from_file(args.edges)
-        else:
-            sample_edges_file = Path("networks/battleship.txt")
-            if sample_edges_file.exists():
-                edges = NetworkConfig._load_edges_from_file(str(sample_edges_file))
-            else:
-                print("⚠️  No network topology specified and battleship.txt not found!")
-                print("💡 Run with --create-sample first, then try again.")
-                return
+        if not alpha_members or not beta_members:
+            print("❌ Both Alpha Squadron and Beta Fleet must have members!")
+            return
         
-        # 4️⃣ Initialize agent network from enriched config
-        net_cfg = NetworkConfig(
-            nodes=llm_cfg["nodes"],
-            edges=edges,
-            global_config=llm_cfg.get("global_config", {})
-        )
-        network = AgentNetwork(net_cfg)
+        print(f"🔵 Alpha Squadron: {len(alpha_members)} members - {', '.join(alpha_members)}")
+        print(f"🔴 Beta Fleet: {len(beta_members)} members - {', '.join(beta_members)}")
         
-        # 5️⃣ Display network summary
-        print("\n⚔️  Battleship Network Configuration:")
+        # Check team coordination settings
+        alpha_coordination = team_config.get('team_a', {}).get('team_coordination', False)
+        beta_coordination = team_config.get('team_b', {}).get('team_coordination', False)
+        print(f"🤝 Alpha coordination: {'✅ 3-Phase Protocol' if alpha_coordination else '❌ Disabled'}")
+        print(f"🤝 Beta coordination: {'✅ Enabled' if beta_coordination else '❌ Individual Decisions'}")
+        
+        if not alpha_coordination:
+            print("⚠️  Warning: Alpha Squadron should have team_coordination=true for 3-phase deliberation experiment")
+        if beta_coordination:
+            print("⚠️  Warning: Beta Fleet should have team_coordination=false for individual decision experiment")
+        
+        # 3️⃣ Initialize simultaneous battleship network
+        print(f"\n🕸️  Initializing agent network...")
+        network = create_battleship_network(args.llm_config, args.edges)
+        
+        # 4️⃣ Display network summary
+        print("\n🎮 Simultaneous Battleship Network Configuration:")
         network.visualize_network()
         info = network.get_network_info()
-        print(f"📊 Summary: {info['num_agents']} agents, {info['num_connections']} connections")
-        print(f"🎮 Communication rounds: Read from config file")
+        print(f"📊 Network Summary: {info['total_agents']} agents, {info['total_connections']} connections")
         
-        # 6️⃣ Start the simulation
-        print("\n🚀 STARTING BATTLESHIP SIMULATION")
-        print("=" * 50)
-        game, stats = await run_battleship_simulation(
+        # 5️⃣ Game setup summary
+        ship_set = game_cfg['game_config']['selected_ship_set']
+        ships = game_cfg['game_config']['ship_sets'][ship_set]
+        print(f"\n⚓ Ship Configuration: {ship_set} set")
+        for ship in ships:
+            print(f"   {ship['name']} (size {ship['size']}) x{ship['quantity']}")
+        
+        if args.seed:
+            print(f"🎲 Random seed: {args.seed} (reproducible ship assignments)")
+        else:
+            print(f"🎲 Random seed: None (random ship assignments)")
+        
+        # 6️⃣ Start the simultaneous battleship simulation
+        print(f"\n🚀 STARTING SIMULTANEOUS BATTLESHIP SIMULATION")
+        print("=" * 60)
+        print("🎯 Experiment: 3-Phase Alpha Coordination vs Beta Individual Decisions")
+        print("⚡ NEW: Simultaneous execution eliminates turn order bias")
+        print("🚢 Features: Individual ship ownership, dual action space (BOMB/MOVE), player elimination")
+        print("")
+        
+        game, stats = await run_simultaneous_battleship_simulation(
             agent_network=network,
-            battleship_config_path=args.battleship_config
+            battleship_config_path=args.battleship_config,
+            random_seed=args.seed
         )
         
-        # 7️⃣ Detailed Summary & Analysis
-        print("\n" + "=" * 50)
-        print("📊 DETAILED GAME ANALYSIS")
-        print("=" * 50)
+        # 7️⃣ Simultaneous Battleship Analysis
+        print("\n" + "=" * 60)
+        print("🎮 SIMULTANEOUS BATTLESHIP GAME ANALYSIS")
+        print("=" * 60)
         
+        # Game outcome
+        if game.state.winner:
+            winner_team = game.state.teams[game.state.winner]
+            print(f"🏆 WINNER: {winner_team.name}")
+            
+            # Analyze coordination effect on victory
+            winner_coordination = team_config.get(game.state.winner, {}).get('team_coordination', False)
+            coordination_effect = "3-phase coordination" if winner_coordination else "individual decisions"
+            print(f"🤝 Victory method: {coordination_effect}")
+        else:
+            print("🤝 GAME ENDED WITHOUT CLEAR WINNER")
+        
+        print(f"📊 Game duration: {game.state.round_number} rounds")
+        
+        # Individual ship ownership and elimination summary
+        print(f"\n🚢 INDIVIDUAL SHIP OWNERSHIP & ELIMINATION:")
+        total_eliminated = 0
+        for team_id, team in game.state.teams.items():
+            print(f"\n  {team.name}:")
+            for ship in team.grid.ships:
+                status = "💥 SUNK" if ship.is_sunk else "⚓ ALIVE"
+                if ship.owner_id in game.state.eliminated_players:
+                    status += " (❌ PLAYER ELIMINATED)"
+                    total_eliminated += 1
+                print(f"    {ship.owner_id}: {ship.name} (size {ship.size}) {status}")
+        
+        print(f"\n💀 Total players eliminated: {total_eliminated}/{len(alpha_members + beta_members)}")
+        
+        # Action analysis (if available)
+        if 'action_metrics' in stats:
+            bomb_actions = stats['action_metrics']['total_bomb_actions']
+            move_actions = stats['action_metrics']['total_move_actions']
+            print(f"\n⚔️ SIMULTANEOUS ACTION SPACE ANALYSIS:")
+            print(f"  💣 Bomb actions: {bomb_actions}")
+            print(f"  🚢 Move actions: {move_actions}")
+            print(f"  📊 Total actions: {bomb_actions + move_actions}")
+            
+            if move_actions > 0:
+                ratio = bomb_actions / move_actions
+                print(f"  📈 Bomb:Move ratio: {ratio:.1f}:1")
+            
+            # Analyze action distribution by team
+            print(f"\n📊 Action distribution analysis:")
+            print(f"   Movement usage: {move_actions / (bomb_actions + move_actions) * 100:.1f}% of all actions")
+            print(f"   Strategic balance: {'High mobility' if move_actions > bomb_actions * 0.3 else 'Low mobility'}")
+        
+        # Team coordination experiment results
+        print(f"\n🧪 COORDINATION EXPERIMENT RESULTS:")
+        alpha_config = team_config.get('team_a', {})
+        beta_config = team_config.get('team_b', {})
+        
+        print(f"  🔵 Alpha Squadron (3-Phase Protocol):")
+        print(f"     Strategy: Proposals → Voting → Plan Selection")
+        print(f"     Coordination: {'✅ 3-Phase deliberation' if alpha_config.get('team_coordination') else '❌ No coordination'}")
+        print(f"     Ships remaining: {len([s for s in game.state.teams['team_a'].grid.ships if not s.is_sunk])}")
+        
+        print(f"  🔴 Beta Fleet (Individual Decisions):")
+        print(f"     Strategy: Parallel individual choices")
+        print(f"     Coordination: {'✅ Team coordination' if beta_config.get('team_coordination') else '❌ Individual decisions'}")
+        print(f"     Ships remaining: {len([s for s in game.state.teams['team_b'].grid.ships if not s.is_sunk])}")
+        
+        # Player performance breakdown
+        print(f"\n🎯 PLAYER PERFORMANCE:")
+        for player_id, score in game.state.player_scores.items():
+            eliminated_status = " (❌ ELIMINATED)" if player_id in game.state.eliminated_players else ""
+            print(f"  {player_id}: {score.total_score} points{eliminated_status}")
+            print(f"    Victory: +{score.team_victory}, Survival: +{score.ship_survival}, Coordination: +{score.coordination_bonus}, Penalties: {score.waste_penalty}")
+        
+        # Verbose analysis
         if args.verbose:
-            print("\n🗺️  FINAL GRID STATES:")
+            print(f"\n🗺️ FINAL GRID STATES:")
             for team_id, team in game.state.teams.items():
                 print(f"\n{team.name} ({team_id}):")
-                grid_display = team.grid.get_display_grid(hide_ships=False)
-                # Column headers
-                print("   " + " ".join(str(i+1).rjust(2) for i in range(len(grid_display[0]))))
-                # Rows
-                for i, row in enumerate(grid_display):
-                    label = chr(ord('A') + i)
-                    print(f"{label:2} " + " ".join(cell.rjust(2) for cell in row))
+                # Simple grid display
+                print("   Grid visualization not implemented - see game log for details")
+            
+            print(f"\n📋 DETAILED EVENT LOG:")
+            important_events = [e for e in game.state.game_log 
+                               if e["event_type"] in ["BOMB_RESULT", "MOVE_SUCCESS", "GAME_OVER", "SIMULTANEOUS_EXECUTION_START"]]
+            for event in important_events[-10:]:  # Last 10 important events
+                timestamp = event["timestamp"][:19]  # Remove microseconds
+                print(f"  [{timestamp}] {event['event_type']}: {event['message']}")
         
-        # Communication breakdown
-        print(f"\n💬 COMMUNICATION BREAKDOWN:")
-        for team_id, team in game.state.teams.items():
-            print(f"\n{team.name}:")
-            for member in team.members:
-                events = [
-                    e for e in game.state.game_log
-                    if e.get("metadata", {}).get("player") == member
-                    and e["event_type"] in ["AI_CONSULTATION", "TEAM_DISCUSSION"]
-                ]
-                ai_cnt = sum(1 for e in events if e["event_type"] == "AI_CONSULTATION")
-                team_cnt = sum(1 for e in events if e["event_type"] == "TEAM_DISCUSSION")
-                print(f"  {member}: {ai_cnt} AI consultations, {team_cnt} team discussions")
+        # Export memories if requested
+        if args.export_memories:
+            try:
+                memory_export = game.memory_manager.export_all_memories()
+                memory_file = Path("output") / f"memories_{game.state.round_number}rounds.json"
+                memory_file.parent.mkdir(exist_ok=True)
+                with memory_file.open('w') as f:
+                    json.dump(memory_export, f, indent=2)
+                print(f"\n💾 Agent memories exported to: {memory_file}")
+            except Exception as e:
+                print(f"\n⚠️ Memory export failed: {e}")
         
-        # Coordinate call efficiency
-        print(f"\n🎯 COORDINATE CALL EFFICIENCY:")
-        for player_id, coords in game.coordinate_history.items():
-            efficiency = (len(set(coords)) / len(coords)) if coords else 0
-            print(f"  {player_id}: {len(coords)} calls, {efficiency:.1%} efficiency")
-        
-        print(f"\n✅ Simulation completed successfully!")
+        # Final summary
+        print(f"\n✅ Simultaneous battleship simulation completed successfully!")
         print(f"📈 Total game events logged: {len(game.state.game_log)}")
-    
+        
+        # Save detailed game log
+        log_file = game.save_game_log()
+        print(f"📝 Complete game log saved to: {log_file}")
+        
+        # Experiment insights
+        print(f"\n🔬 EXPERIMENT INSIGHTS:")
+        if game.state.winner and alpha_coordination != beta_coordination:
+            winner_used_coordination = team_config.get(game.state.winner, {}).get('team_coordination', False)
+            insight = "3-phase coordination" if winner_used_coordination else "Individual decisions"
+            print(f"   💡 {insight} strategy achieved victory in this simulation")
+        print(f"   📊 Individual ship ownership created {total_eliminated} eliminations")
+        print(f"   ⚡ Simultaneous execution eliminated turn order bias")
+        if 'action_metrics' in stats and stats['action_metrics']['total_move_actions'] > 0:
+            print(f"   🚢 Dynamic movement added {stats['action_metrics']['total_move_actions']} tactical repositioning actions")
+        
+        # Team coordination analysis summary
+        coordination_summary = game.memory_manager.get_experiment_summary()
+        if coordination_summary:
+            print(f"\n📊 COORDINATION EFFECTIVENESS SUMMARY:")
+            coord_data = coordination_summary.get('coordination_effectiveness', {})
+            for team_id, team_analysis in coord_data.items():
+                if isinstance(team_analysis, dict):
+                    coord_level = team_analysis.get('coordination_level', 'unknown')
+                    consensus_rate = team_analysis.get('consensus_rate', 0)
+                    print(f"   {team_id}: {coord_level} coordination ({consensus_rate:.1%} consensus rate)")
+        
     except Exception as e:
         print(f"❌ Simulation error: {e}")
         if args.verbose:
             traceback.print_exc()
-        print("\n💡 Common issues:")
+        print("\n💡 Common troubleshooting:")
         print("   - Check API keys in LLM config")
         print("   - Ensure Ollama is running: ollama serve")
         print("   - Verify agent IDs match between configs")
+        print("   - Check network topology file format")
+        print("   - Validate team coordination settings")
+        print("   - Ensure team_a has team_coordination=true, team_b has team_coordination=false")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--create-sample":
-        create_sample_battleship_network()
-        print("✅ Sample battleship network created!")
-        print("💡 Now run: python battleship_runner.py")
-    else:
-        asyncio.run(main())
+    asyncio.run(main())

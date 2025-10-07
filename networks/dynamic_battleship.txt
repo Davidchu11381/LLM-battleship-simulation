@@ -1,0 +1,10 @@
+# Dynamic Battleship Network Topology
+# Alpha Squadron - full team communication for deliberation
+player_a1 -> player_a2
+player_a1 -> player_a3
+player_a2 -> player_a1
+player_a2 -> player_a3
+player_a3 -> player_a1
+player_a3 -> player_a2
+
+# Beta Fleet - NO team communication (individual decisions only)

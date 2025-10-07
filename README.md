@@ -1,369 +1,268 @@
-# 🚀 LLM Agent Network Framework
+# 🚀 LLM Agent Network Framework — Dynamic Battleship
 
-Multi-agent AI battleship with **persistent memory** and **authentic decision-making**. Teams of AI agents strategize, communicate, and adapt using accumulated battlefield intelligence.
+Multi-agent Battleship experiment comparing coordinated team deliberation vs. individual decision-making with simultaneous execution to eliminate turn order bias.
 
-## 🎯 What it does
+## 🎯 Experiment Objective
 
-AI agents play adversarial battleship with **100% authentic decision-making** - no predefined moves or scripted strategies. Agents remember past attacks, learn enemy patterns, and make strategic decisions through genuine AI reasoning.
+**Hypothesis:** Team Alpha (coordinated deliberation) outperforms Team Beta (individual decisions) when both teams execute actions simultaneously.
 
-**Key Features:**
-- **Authentic AI decisions** - all coordinates chosen by AI reasoning, not fallbacks
-- **Persistent memory** - agents remember attacks, patterns, and strategic insights  
-- **Personality-driven behavior** - decision-making based on risk tolerance, team reliance, leadership style
-- **Multi-model support** - mix local (Ollama) and cloud (OpenAI/Claude/Gemini) models
-- **Team strategy** - leaders coordinate, players consult AI assistants and teammates
-- **Real-time adaptation** - strategies evolve based on battlefield intelligence
+**Controls:** Same board, ships, LLM configs, and random seeds. Only coordination method differs.
 
-## 📁 Project Structure
+## 📦 Project Structure
 
 ```
 LLM-Agent-Network/
-├── agent_network.py          # Core framework
-├── battleship_game.py        # Battleship game engine with memory
-├── battleship_runner.py      # Main battleship runner
-├── memory_manager.py         # Persistent memory system for agents
-├── battleship_config.json   # Game settings & teams
-├── LLM_config.json          # Agent configurations
-├── networks/
-│   ├── battleship.txt       # Battleship network topology
-│   ├── full_mesh.txt        # Full connectivity testing
-│   └── simple.txt           # Basic 2-agent testing
-├── output/                  # Generated logs & results
-└── README.md
+├── agent_network.py          # Agent messaging and communication
+├── battleship_game.py        # Game engine and rules
+├── battleship_runner.py      # Main launcher
+├── memory_manager.py         # Team vs. individual memory management
+├── battleship_config.json    # Game settings
+├── LLM_config.json           # Agent configurations
+├── networks/battleship.txt   # Team communication topology
+└── output/                   # Results and logs
 ```
 
-## 🎮 Game Overview
+## 🕹️ Game Rules
 
-**Standard battleship** with AI teams that think, strategize, and adapt:
-- **10x10 grid** (A1-J10), **5 ships per team** (Carrier to Patrol Boat)
-- **Teams of 2-4 agents**: Leaders coordinate, players make attack decisions  
-- **AI assistants** provide strategic analysis and coordinate suggestions
-- **Win condition**: First team to sink all enemy ships
+- **Board:** 10×10 grid (A1–J10)
+- **Teams:** Alpha Squadron vs. Beta Fleet (3 agents each)
+- **Ships:** Each agent controls one ship (Battleship-4, Cruiser-3, or Destroyer-2)
+- **Actions:** Each turn choose `BOMB <coord>` or `MOVE <direction>`
+- **Execution:** Simultaneous execution after both teams complete decision phase
+- **Victory:** First team to sink all enemy ships wins
 
-## 🧠 How Agents Think
+## 🧠 Team Differences
 
-**Memory-Driven Decisions**: Every agent maintains battlefield intelligence - past attacks, enemy patterns, team strategies. No duplicates, pure strategic reasoning.
+**Alpha Squadron (Coordinated Deliberation):**
+- 3-step team deliberation process before action execution
+- Full team strategy proposals with reasoning
+- Democratic voting on complete team plans
+- Shared memory of all battlefield events
 
-**Authentic AI Process**:
-```
-1. Consultation → AI assistant + team discussion
-2. Memory Context → Past attacks, enemy patterns, strategic insights  
-3. Personality Analysis → Risk tolerance, team reliance, decision speed
-4. AI Reasoning → Genuine strategic coordinate selection
-5. Execution → Attack, update memories, share intelligence
-```
+**Beta Fleet (Individual Decisions):**
+- No team communication or deliberation
+- Individual memory and decision making
+- Same information access but no coordination
 
-## 🎯 Game Flow & Phases
+## 🗣️ Game Flow (Eliminating Turn Order Bias)
 
-### **Phase 1: Ship Placement** 
-```
-1. Team Leader Discussion (configurable rounds)
-   - Leader asks: "Where should we place our Carrier (5 spaces)? Edge or center?"
-   - Team members provide input on ship placement strategy
-   - Leader makes final decisions based on team consensus
+### Phase 1: Team Alpha Deliberation (3 Steps)
 
-2. Automatic Ship Placement
-   - Ships are randomly placed for simulation efficiency
-   - Real implementation could use AI-driven placement
-```
+While Team Beta waits on standby:
 
-### **Phase 2: Battle Rounds**
-```
-Round Structure:
-├── Team A Turn
-│   ├── Player A1 Individual Turn
-│   │   ├── 1. Consultation Phase
-│   │   │   ├── AI Assistant Consultation (if available)
-│   │   │   └── Team Discussion (based on personality)
-│   │   ├── 2. Advice Consolidation
-│   │   │   └── Gather all AI and team suggestions
-│   │   ├── 3. Coordinate Decision (Authentic AI)
-│   │   │   ├── Memory Context: Previous attacks, battlefield intel
-│   │   │   ├── Personality Profile: Risk tolerance, assistant reliance
-│   │   │   └── Strategic Reasoning: AI chooses coordinate
-│   │   └── 4. Attack Execution & Memory Update
-│   ├── Player A2 Individual Turn
-│   └── [... all team members take turns]
-├── Intel Sharing Phase
-│   ├── Battlefield intel updated for all agents
-│   └── Round results shared with teams
-└── Team B Turn (same structure)
-```
+#### Step 1: Team Strategy Proposals (Broadcast)
 
-### **Phase 3: Game Over**
-```
-- Victory announcement when all ships sunk
-- Statistics generation and memory export
-- Game log saved for analysis
-```
+- All 3 Alpha agents simultaneously propose complete team strategies
+- Each proposal includes specific actions for ALL team members
+- Format: `PROPOSAL: player_a1 BOMB E5, player_a2 MOVE LEFT, player_a3 BOMB F6 - [50 word reasoning]`
+- Reasoning should consider: game rules, strategy, individual ship safety, team coordination, maximizing firepower
 
-## 💭 Communication Tactics & Strategies
+#### Step 2: Democratic Voting
 
-### **AI Assistant Consultation**
+- Each Alpha agent votes for ONE complete team plan (can vote for their own)
+- Agents consider both personal ship safety AND team victory
+- Format: `VOTE: [player_name]'s plan - [brief reasoning]`
+
+#### Step 3: Plan Selection
+
+- Majority vote wins (2/3 or 3/3)
+- Tie-breaking: Random selection between tied plans
+- Selected plan becomes Alpha's actions for simultaneous execution
+
+### Phase 2: Team Beta Individual Decisions
+
+- Each Beta agent makes independent decisions (no communication)
+- Same battlefield information as Alpha but no coordination
+- Individual memory only
+
+### Phase 3: Simultaneous Execution
+
+- Both teams execute their chosen actions at exactly the same time
+- No turn order bias - all BOMB and MOVE actions processed simultaneously
+- Results applied and new round begins
+
+## ⚙️ Implementation Specifications
+
+### Team Alpha Communication Architecture
+
+- **Step 1:** GroupChat broadcast - all agents propose simultaneously
+- **Step 2:** Sequential voting - each agent votes for one plan
+- **Step 3:** System determines majority winner, random tie-breaking
+- **Timing:** Beta team waits until Alpha completes all 3 steps
+
+### Team Beta Decision Architecture
+
+- **Individual prompts:** Each agent receives context and chooses action independently
+- **No communication:** Pure individual decision-making
+- **Parallel processing:** All Beta decisions can be made simultaneously
+
+### Simultaneous Execution System
+
+- **Action Collection:** Gather final actions from both teams
+- **Conflict Resolution:** Handle duplicate bombing coordinates (both teams can bomb same spot)
+- **Synchronous Processing:** Apply all BOMB and MOVE actions at once
+- **Result Broadcasting:** Inform all agents of round results
+
+### Agent Incentive Structure
+
+- Team Victory: +100 points per agent
+- Individual Ship Survival: +20 points
+- Team Coordination Bonus (Alpha only): +5 points for effective proposals/votes
+- Natural consequences for poor coordination (wasted attacks, missed opportunities)
+
+### Memory Management
+
+- **Alpha Team:** Shared memory of all deliberations, proposals, votes, and battlefield events
+- **Beta Team:** Individual memory only - each agent tracks their own observations
+- **Global Events:** All BOMB results, MOVE results, eliminations recorded for analysis
+- **Battlefield Intel:** Explicit lists of attacked coordinates provided to prevent wasteful targeting
+
+## 🛠️ Detailed Implementation Requirements
+
+### Core Game Engine Updates
+
+#### Remove Turn-Based Structure
+
+- Replace alternating team turns with simultaneous execution
+- Implement two-phase structure: Decision → Execution
+
+#### Alpha Deliberation Phase
+
 ```python
-# Example AI Assistant Prompt
-"""Battle situation:
-Round: 3
-Your Team: Alpha Fleet
-Previous Coordinates: A1, B2, C3
-
-Suggest coordinate for attack.
-Format: COORDINATE: [A1] - REASONING: [why]
-Maximum 25 words."""
+async def alpha_deliberation_phase(team_members):
+    # Step 1: Collect team strategy proposals
+    proposals = await collect_team_proposals(team_members)
+    
+    # Step 2: Conduct voting
+    votes = await conduct_voting(team_members, proposals)
+    
+    # Step 3: Determine winning plan
+    winning_plan = determine_majority_winner(votes)
+    
+    return parse_actions_from_plan(winning_plan)
 ```
 
-### **Team Discussion Questions** (Dynamic Based on Game State)
-**Early Game (< 3 attempts):**
-- "Should I target center areas or edges first?"
-- "Go systematic or random hunting?"
+#### Beta Individual Phase
 
-**Mid Game (3-8 attempts):**
-- "Continue current search pattern or switch zones?"
-- "Focus on unexplored areas or follow up on hits?"
-
-**Late Game (8+ attempts):**
-- "Any patterns you noticed in their ship placement?"
-- "Should I target near previous hits or try new area?"
-
-### **Communication Flow**
-```
-Player Turn Communication:
-1. AI Assistant Consultation (if has_assistant = true)
-   └── Strategic analysis and coordinate suggestion
-
-2. Team Discussion (based on assistant_reliance level)
-   ├── HIGH reliance: Minimal team consultation
-   ├── MEDIUM reliance: Balanced AI + team input
-   └── LOW reliance: Extensive team discussion
-
-3. Advice Consolidation
-   └── AI weighs all suggestions based on personality profile
-```
-
-## 🎭 Personality Profiles & Decision Making
-
-### **Personality Dimensions**
-- **`assistant_reliance`**: `high` (follows AI advice), `medium` (balanced), `low` (prefers team input)
-- **`decision_speed`**: `fast` (instinctual), `medium` (considers input), `slow` (careful analysis)
-- **`risk_tolerance`**: `high` (center attacks), `medium` (balanced), `low` (systematic edges)
-- **`leadership_style`**: `collaborative` (team consensus), `authoritative` (AI analysis preferred)
-
-### **Authentic Decision Logic**
 ```python
-# AI Decision Prompt (Profile-Driven)
-COORDINATE SELECTION - analytical player
-
-FORBIDDEN: A1, B2, C3, D4  # Already attempted coordinates
-
-BATTLEFIELD MEMORY:
-Round 3 intel: Enemy attacks at F7, G3
-Global status: 8 coordinates attempted
-Remaining targets: 92
-
-ADVICE RECEIVED:
-🤖 assistant_a1: Suggests H9 - Strategic center targeting
-👥 teammate_1: Focus on unexplored quadrants
-
-PROFILE: analytical_player
-- Assistant reliance: medium (balance all inputs)
-- Risk tolerance: high
-- Decision speed: medium
-
-Choose your attack coordinate. Avoid forbidden coordinates.
-REQUIRED FORMAT: COORDINATE: [X#]
+async def beta_individual_phase(team_members):
+    # Parallel individual decisions
+    actions = await gather_individual_decisions(team_members)
+    return actions
 ```
 
-## 🔄 Memory-Driven Adaptation
+#### Simultaneous Execution
 
-### **Battlefield Intel Updates** (After Each Attack)
-```json
-{
-  "type": "battlefield_intel", 
-  "content": "TURN INTEL: player_a1 attacked E5 → HIT (sunk Destroyer)",
-  "round": 3,
-  "agents_updated": ["player_a1", "assistant_a1", "all_opponents"]
-}
+```python
+async def execute_simultaneous_actions(alpha_actions, beta_actions):
+    # Process all BOMB actions from both teams
+    # Process all MOVE actions from both teams
+    # Apply results and update game state
+    # Broadcast results to all agents
 ```
 
-### **Cross-Team Intelligence Sharing**
-- **Own Team**: Full attack results and strategic insights
-- **Enemy Team**: Limited intel about opponent activity
-- **Assistants**: Updated with their player's memory context
+### Communication Protocol Implementation
 
-### **Memory Context in Decisions**
-```
-BATTLEFIELD MEMORY:
-Enemy team (Bravo Fleet) attempted: F7, F4, D5
-Global battlefield status: 13 coordinates attempted by both teams
-Strategic note: Use this intel to avoid already-attempted coordinates.
-```
+#### Alpha Step 1 - Team Proposals
 
-## 🚀 Quick Start
+- Prompt: "Propose a complete strategy for your entire team. Include specific BOMB/MOVE actions for each teammate and 50-word reasoning considering game rules, strategy, ship safety, and team coordination."
+- Collection: Gather all 3 proposals simultaneously
+- Validation: Ensure each proposal specifies actions for all team members
+
+#### Alpha Step 2 - Voting
+
+- Present all proposals to each agent
+- Prompt: "Vote for ONE complete team plan. Consider ship survival, team firepower preservation, and strategic coordination for team victory."
+- Collection: Gather votes sequentially or simultaneously
+- Validation: Each agent votes for exactly one plan
+
+#### Alpha Step 3 - Plan Selection
+
+- Count votes for each proposal
+- Implement majority rule (simple majority of 3 agents)
+- Random tie-breaking for 3-way ties or 1-1-1 splits
+- Parse winning plan into individual PlayerAction objects
+
+### Agent Context and Prompting
+
+#### Rich Context Generation
+
+- Round number and game state
+- Own ship status and position
+- Team ship status and positions
+- Battlefield memory (hits, misses, eliminations)
+- Valid actions for own ship
+- Enemy team status (what's known)
+
+#### Alpha Proposal Prompts
+
+- Include full team context
+- Emphasize strategic thinking
+- Require consideration of all team members
+- 50-word reasoning requirement
+
+#### Beta Individual Prompts
+
+- Same battlefield information as Alpha
+- Emphasize individual decision-making
+- No team coordination information
+
+## Expected Research Outcomes
+
+If coordination hypothesis is correct:
+
+- Alpha teams show higher win rates due to strategic coordination
+- Alpha teams demonstrate more effective ship positioning and protection
+- Alpha teams exhibit better target prioritization and focus fire
+- Alpha proposals evolve in quality over multiple games
+- Voting patterns reveal agent learning and adaptation
+
+### Key Research Metrics
+
+- **Win Rate:** Alpha vs Beta across multiple games
+- **Coordination Effectiveness:** Quality of Alpha proposals and voting consensus
+- **Survival Rate:** Individual ship survival by team
+- **Tactical Efficiency:** Hit rates, target selection, resource utilization
+- **Emergent Behavior:** Evolution of strategies over multiple rounds
+
+### Experimental Controls
+
+- Same LLM models and configurations for both teams
+- Identical ship assignments and battlefield information
+- Same random seeds for reproducible results
+- Only difference: coordination method (deliberation vs individual)
+
+This design eliminates turn order bias while providing a clean test of whether structured team deliberation outperforms individual decision-making in strategic gameplay.
+
+## 🚀 Setup & Run
 
 ### 1. Install Dependencies
+
 ```bash
-pip install ag2[ollama,openai]
+pip install ag2[ollama] networkx
 ```
 
-### 2. Configure API Keys
-Create or edit `LLM_config.json` and add your API keys:
-```json
-{
-  "global_config": {
-    "api_keys": {
-      "openai": "your-openai-key",
-      "anthropic": "your-claude-key"
-    }
-  }
-}
-```
+### 2. Start Local LLM
 
-### 3. Setup Local Models (Optional)
-For local Llama models via Ollama:
 ```bash
-# Install and start Ollama
 export OLLAMA_HOST=0.0.0.0:11435
 ollama serve &
-ollama pull llama3.1:8b
+ollama run gpt-oss:120b  # or your preferred model
 ```
 
-### 4. Run Battleship Game
-```bash
-# Create sample configuration and run game
-python battleship_runner.py --create-sample
-python battleship_runner.py
+### 3. Configure
 
-# Advanced options
-python battleship_runner.py --communication-rounds 5 --verbose
-```
+- Edit `LLM_config.json` for your model settings
+- Set Alpha `"team_coordination": true`, Beta `"team_coordination": false`
 
-### 5. Test Basic Network (Optional)
-```bash
-python3 main.py --rounds 1 --max-turns 2 --edges networks/simple.txt
-```
-
-## 📊 Memory Export & Analytics
+### 4. Run Experiment
 
 ```bash
-# Export all agent memories after game
-game.export_game_memories()  # → battleship_memories_TIMESTAMP.json
+# Single game
+python battleship_runner.py --seed 123
 
-# View battlefield intelligence
-agent_memory = game.memory_manager.get_agent_memory("player_a1")
-print(agent_memory.generate_battlefield_summary())
+# Multiple trials
+for s in $(seq 1 50); do
+  python battleship_runner.py --seed $s
+done
 ```
-
-## 🎯 Example Authentic AI Decision
-
-```
-COORDINATE DECISION TIME (Profile: analytical player)
-
-BATTLEFIELD MEMORY:
-Enemy team (Bravo Fleet) attempted: F7, F4, D5
-Global battlefield status: 13 coordinates attempted by both teams
-Strategic note: Use this intel to avoid already-attempted coordinates.
-
-ADVICE RECEIVED THIS TURN:
-👥 leader_alpha: Suggests center targeting strategy
-🤖 assistant_a1: Suggests H9 - HIGH PROBABILITY ZONE
-
-PROFILE ANALYSIS:
-- Medium AI reliance: Balancing AI suggestion with team strategy
-- High risk tolerance: Center attacks preferred
-- Medium decision speed: Considering all inputs
-
-AI REASONING: "H9 aligns with assistant analysis and hasn't been attempted. 
-Center positioning matches my risk profile. Avoiding all forbidden coordinates."
-
-FINAL DECISION: COORDINATE: [H9]
-```
-
-## ⚙️ Configuration
-
-**LLM Config** (`LLM_config.json`): Agent definitions and API keys
-**Battleship Config** (`battleship_config.json`): Teams, personalities, game settings  
-**Network Topology** (`networks/battleship.txt`): Communication patterns
-
-### Sample Team Configuration
-```json
-{
-  "team_alpha": {
-    "name": "Alpha Fleet",
-    "members": ["player_a1", "player_a2"],
-    "leader": "player_a1",
-    "color": "blue"
-  }
-}
-```
-
-### Sample Personality Profile
-```json
-{
-  "analytical_player": {
-    "description": "analytical player",
-    "assistant_reliance": "medium",
-    "decision_speed": "medium", 
-    "risk_tolerance": "high",
-    "leadership_style": "authoritative"
-  }
-}
-```
-
-## 🚀 Advanced Features
-
-### Multi-Model Support
-- **GPT-4** for strategic leaders
-- **Claude** for analytical players  
-- **Local Llama** for assistants
-- **Gemini** for specific roles
-
-### Authentic AI Decision Pipeline
-```
-Consultation → Advice Consolidation → Memory Context → Personality Analysis → AI Reasoning → Coordinate Selection
-```
-
-### Error Handling & Reliability
-- **Retry Logic**: If AI gives invalid coordinate, single retry with clearer prompts
-- **Emergency Fallback**: Random selection from valid coordinates if AI fails
-- **Memory Validation**: Prevents duplicate attacks through battlefield intel
-
-### Memory Analytics
-```python
-# Analyze player behavior patterns
-behavior_analysis = memory_manager.analyze_player_behavior(
-    player_id="player_a1", 
-    recent_coordinates=["A1", "B2", "C3"]
-)
-# → {"coordinate_preference": "Prefers edge attacks", "attack_strategy": "Systematic approach"}
-```
-
-## 🎮 Game Statistics & Logging
-
-### Exported Game Data
-- **Complete coordinate history** for each player
-- **Communication logs** between all agents
-- **Memory snapshots** at each decision point
-- **Performance metrics** by team and individual
-- **Personality-driven decision analysis**
-
-### Sample Game Output
-```
-🎮 BATTLESHIP GAME COMPLETE!
-🏆 WINNER: Alpha Fleet
-📊 Total Rounds: 8
-📈 TEAM PERFORMANCE:
-  Alpha Fleet: 2/5 ships lost
-  Bravo Fleet: 5/5 ships lost  
-🎯 PLAYER ACTIVITY:
-  player_a1: 4 attacks (3 hits, 1 sunk)
-  player_a2: 4 attacks (2 hits)
-💬 Communication: 24 total interactions
-   🤖 AI consultations: 8
-   👥 Team discussions: 16
-```
-
----
-
-**🎯 Ready for authentic AI battleship tournaments with persistent memory and adaptive learning!** 
-
-*Agents that think, strategize, remember, and evolve their tactics through genuine AI reasoning.*

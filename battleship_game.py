@@ -1,23 +1,41 @@
 """
-Battleship Game Engine for Agent Network Framework
+battleship_game.py — Dynamic Battleship Game Engine
 
-Implements adversarial battleship gameplay with team-based AI agents.
-Supports variable team sizes, AI assistants, and personality-driven gameplay.
+Implementation of the 3-phase Alpha consensus protocol vs Beta individual decisions
+with SIMULTANEOUS EXECUTION to eliminate turn order bias:
+
+Alpha Team (Coordinated):
+1. Team Strategy Proposals (Parallel Broadcast)
+2. Democratic Voting (Sequential)  
+3. Plan Selection (Majority rule with tie-breaking)
+
+Beta Team: Individual decisions only
+
+Both teams execute actions simultaneously after decision phases complete.
 """
+
+from __future__ import annotations
 
 import json
 import asyncio
 import random
-from typing import Dict, List, Optional, Tuple, Any
+import re
+import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-import logging
-from datetime import datetime
-from memory_manager import GlobalMemoryManager, MemoryType
+from typing import Any, Dict, List, Optional, Tuple
+
+from memory_manager import GlobalMemoryManager
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+
+# =============================================================================
+# Core Types
+# =============================================================================
 
 class CellState(Enum):
     EMPTY = "~"
@@ -33,16 +51,51 @@ class GamePhase(Enum):
     GAME_OVER = "game_over"
 
 
+class ActionType(Enum):
+    BOMB = "BOMB"
+    MOVE = "MOVE"
+
+
 @dataclass
 class Ship:
     name: str
     size: int
+    owner_id: str
     positions: List[Tuple[int, int]] = field(default_factory=list)
     hits: int = 0
-    
+    orientation: str = "horizontal"
+
     @property
     def is_sunk(self) -> bool:
         return self.hits >= self.size
+
+
+@dataclass
+class PlayerAction:
+    player_id: str
+    action_type: ActionType
+    target: str  # coordinate for BOMB, direction for MOVE
+    reason: Optional[str] = None
+
+
+@dataclass
+class TeamProposal:
+    proposer_id: str
+    team_actions: Dict[str, PlayerAction]  # player_id -> action
+    reasoning: str
+
+
+@dataclass
+class PlayerScore:
+    player_id: str
+    team_victory: int = 0          # +100 points
+    ship_survival: int = 0         # +20 points
+    coordination_bonus: int = 0    # +5 points for effective proposals/votes
+    waste_penalty: int = 0         # -10 points for duplicate bombing
+    
+    @property
+    def total_score(self) -> int:
+        return self.team_victory + self.ship_survival + self.coordination_bonus + self.waste_penalty
 
 
 @dataclass
@@ -50,1267 +103,1444 @@ class GameGrid:
     size: Tuple[int, int] = (10, 10)
     grid: List[List[CellState]] = field(default_factory=list)
     ships: List[Ship] = field(default_factory=list)
-    
+
     def __post_init__(self):
         if not self.grid:
-            self.grid = [[CellState.EMPTY for _ in range(self.size[1])] 
-                        for _ in range(self.size[0])]
-    
+            self.grid = [[CellState.EMPTY for _ in range(self.size[1])]
+                         for _ in range(self.size[0])]
+
     def place_ship(self, ship: Ship, start_pos: Tuple[int, int], orientation: str) -> bool:
-        """Place a ship on the grid. Returns True if successful."""
-        row, col = start_pos
-        positions = []
+        """Place ship on grid"""
+        r, c = start_pos
+        positions: List[Tuple[int, int]] = []
         
-        # Calculate ship positions
         for i in range(ship.size):
-            if orientation.lower() == 'horizontal':
-                new_pos = (row, col + i)
-            else:  # vertical
-                new_pos = (row + i, col)
-            
-            # Check bounds
-            if (new_pos[0] >= self.size[0] or new_pos[1] >= self.size[1] or
-                new_pos[0] < 0 or new_pos[1] < 0):
+            rr, cc = (r, c + i) if orientation == "horizontal" else (r + i, c)
+            if not (0 <= rr < self.size[0] and 0 <= cc < self.size[1]):
                 return False
-            
-            # Check for collision
-            if self.grid[new_pos[0]][new_pos[1]] != CellState.EMPTY:
+            if self.grid[rr][cc] != CellState.EMPTY:
                 return False
-            
-            positions.append(new_pos)
+            positions.append((rr, cc))
         
-        # Place ship
+        # Commit placement
         ship.positions = positions
-        for pos in positions:
-            self.grid[pos[0]][pos[1]] = CellState.SHIP
-        
+        ship.orientation = orientation
+        for rr, cc in positions:
+            self.grid[rr][cc] = CellState.SHIP
         self.ships.append(ship)
         return True
-    
-    def attack(self, target: Tuple[int, int]) -> Tuple[str, Optional[Ship]]:
-        """Attack a position. Returns (result, ship_if_sunk)"""
-        row, col = target
+
+    def get_valid_moves_for_ship(self, ship: Ship) -> List[str]:
+        """Get valid movement directions for a ship"""
+        if not ship.positions:
+            return []
         
-        if row >= self.size[0] or col >= self.size[1] or row < 0 or col < 0:
+        directions = ["UP", "DOWN", "LEFT", "RIGHT", "ROTATE"]
+        valid_moves = []
+        
+        for direction in directions:
+            new_positions = self._calculate_new_positions(ship, direction)
+            if new_positions and self._can_occupy_positions(ship, new_positions):
+                valid_moves.append(direction)
+        
+        return valid_moves
+
+    def move_ship(self, ship: Ship, direction: str) -> bool:
+        """Move ship in specified direction"""
+        new_positions = self._calculate_new_positions(ship, direction)
+        if not new_positions or not self._can_occupy_positions(ship, new_positions):
+            return False
+
+        # Remember hit indices
+        hit_indices = [i for i, (r, c) in enumerate(ship.positions) 
+                      if self.grid[r][c] == CellState.HIT]
+
+        # Clear old positions
+        for r, c in ship.positions:
+            self.grid[r][c] = CellState.EMPTY
+
+        # Set new positions
+        ship.positions = new_positions
+        for r, c in new_positions:
+            self.grid[r][c] = CellState.SHIP
+
+        # Restore hits
+        for i in hit_indices:
+            if i < len(new_positions):
+                r, c = new_positions[i]
+                self.grid[r][c] = CellState.HIT
+
+        # Update orientation for rotation
+        if direction.upper() == "ROTATE":
+            ship.orientation = "vertical" if ship.orientation == "horizontal" else "horizontal"
+
+        return True
+
+    def _calculate_new_positions(self, ship: Ship, direction: str) -> Optional[List[Tuple[int, int]]]:
+        """Calculate new positions for ship movement"""
+        direction = direction.upper()
+        
+        if direction == "ROTATE":
+            return self._calculate_rotation_positions(ship)
+        
+        deltas = {
+            "UP": (-1, 0),
+            "DOWN": (1, 0), 
+            "LEFT": (0, -1),
+            "RIGHT": (0, 1)
+        }
+        
+        if direction not in deltas:
+            return None
+        
+        dr, dc = deltas[direction]
+        return [(r + dr, c + dc) for r, c in ship.positions]
+
+    def _calculate_rotation_positions(self, ship: Ship) -> List[Tuple[int, int]]:
+        """Calculate positions after 90-degree rotation"""
+        if not ship.positions:
+            return []
+        
+        # Use first position as anchor
+        anchor_r, anchor_c = ship.positions[0]
+        
+        if ship.orientation == "horizontal":
+            # Rotate to vertical: spread downward from anchor
+            return [(anchor_r + i, anchor_c) for i in range(ship.size)]
+        else:
+            # Rotate to horizontal: spread rightward from anchor  
+            return [(anchor_r, anchor_c + i) for i in range(ship.size)]
+
+    def _can_occupy_positions(self, moving_ship: Ship, new_positions: List[Tuple[int, int]]) -> bool:
+        """Check if ship can occupy new positions"""
+        for r, c in new_positions:
+            # Check bounds
+            if not (0 <= r < self.size[0] and 0 <= c < self.size[1]):
+                return False
+            
+            cell = self.grid[r][c]
+            
+            # Can't move into occupied space unless it's our own current position
+            if cell in (CellState.SHIP, CellState.HIT):
+                if (r, c) not in moving_ship.positions:
+                    return False
+        
+        return True
+
+    def attack(self, target: Tuple[int, int]) -> Tuple[str, Optional[Ship]]:
+        """Attack a coordinate, return result and sunk ship if any"""
+        r, c = target
+        
+        # Check bounds
+        if not (0 <= r < self.size[0] and 0 <= c < self.size[1]):
             return "INVALID", None
         
-        current_state = self.grid[row][col]
+        cell = self.grid[r][c]
         
-        if current_state in [CellState.HIT, CellState.MISS]:
+        # Already attacked
+        if cell in (CellState.HIT, CellState.MISS):
             return "ALREADY_ATTACKED", None
         
-        if current_state == CellState.SHIP:
-            self.grid[row][col] = CellState.HIT
+        # Hit ship
+        if cell == CellState.SHIP:
+            self.grid[r][c] = CellState.HIT
             
             # Find which ship was hit
             hit_ship = None
             for ship in self.ships:
-                if target in ship.positions:
+                if (r, c) in ship.positions:
                     ship.hits += 1
                     hit_ship = ship
                     break
             
             if hit_ship and hit_ship.is_sunk:
                 return "SUNK", hit_ship
-            else:
-                return "HIT", None
-        else:
-            self.grid[row][col] = CellState.MISS
-            return "MISS", None
-    
-    def all_ships_sunk(self) -> bool:
-        """Check if all ships are sunk"""
-        return all(ship.is_sunk for ship in self.ships)
-    
-    def get_display_grid(self, hide_ships: bool = True) -> List[List[str]]:
-        """Get grid for display purposes"""
-        display = []
-        for row in self.grid:
-            display_row = []
-            for cell in row:
-                if hide_ships and cell == CellState.SHIP:
-                    display_row.append(CellState.EMPTY.value)
-                else:
-                    display_row.append(cell.value)
-            display.append(display_row)
-        return display
+            return "HIT", None
+        
+        # Miss
+        self.grid[r][c] = CellState.MISS
+        return "MISS", None
 
-
+    def get_ship_by_owner(self, owner_id: str) -> Optional[Ship]:
+        """Get ship owned by specified player"""
+        for ship in self.ships:
+            if ship.owner_id == owner_id:
+                return ship
+        return None
 
 
 @dataclass
 class Team:
     name: str
     members: List[str]
-    leader: str
     grid: GameGrid
     color: str = "blue"
-    ship_placement_complete: bool = False
+    coordination_enabled: bool = False
 
 
 @dataclass
 class GameState:
     phase: GamePhase = GamePhase.SETUP
     current_team: Optional[str] = None
-    current_player: Optional[str] = None
     round_number: int = 1
     teams: Dict[str, Team] = field(default_factory=dict)
     game_log: List[Dict[str, Any]] = field(default_factory=list)
     winner: Optional[str] = None
+    eliminated_players: List[str] = field(default_factory=list)
+    player_scores: Dict[str, PlayerScore] = field(default_factory=dict)
 
 
-class GameMaster:
-    """Programmatic game master - no LLM needed"""
-    
-    def __init__(self, game_instance):
-        self.game = game_instance
-        self.message_log = []
-    
-    async def announce_attack_result(self, player_id: str, coordinate: str, 
-                                   result: str, sunk_ship: Optional[Ship] = None):
-        """Announce attack result - no LLM required"""
-        if result == "HIT":
-            announcement = f"🎯 HIT at {coordinate}!"
-        elif result == "MISS": 
-            announcement = f"💦 MISS at {coordinate}."
-        elif result == "SUNK" and sunk_ship:
-            announcement = f"💥 HIT and SUNK! {sunk_ship.name} destroyed at {coordinate}!"
-        elif result == "ALREADY_ATTACKED":
-            announcement = f"❌ {coordinate} already attacked. Choose different coordinate."
-        else:
-            announcement = f"📍 {result} at {coordinate}."
-        
-        # Log the announcement
-        self.message_log.append({
-            'type': 'attack_result',
-            'player': player_id,
-            'coordinate': coordinate,
-            'result': result,
-            'announcement': announcement,
-            'timestamp': datetime.now().isoformat()
-        })
-        
-        # Display result without sending LLM messages
-        logger.info(f"[GAME_MASTER] {announcement}")
-        
-        return announcement
-    
-    
-    async def announce_round_results(self, team_id: str, round_results: List[str]):
-        """Share round results - programmatic only"""
-        team = self.game.state.teams[team_id]
-        all_attempted = self.game._get_all_attempted_coordinates()
-        
-        if round_results:
-            summary = f"""
-🏁 Round {self.game.state.round_number} Results - {team.name}:
-
-This round's attacks:
-{chr(10).join(round_results)}
-
-📊 Total battlefield attempts: {len(all_attempted)} coordinates
-🎯 Remaining valid targets: {100 - len(all_attempted)}
-            """.strip()
-            
-            # Log internally without sending messages to agents
-            self.message_log.append({
-                'type': 'round_summary',
-                'team': team_id,
-                'round': self.game.state.round_number,
-                'results': round_results,
-                'summary': summary,
-                'timestamp': datetime.now().isoformat()
-            })
-            
-            logger.info(f"[GAME_MASTER] {team.name} round complete: {', '.join([r.split(':')[0] for r in round_results])}")
-    
-    async def announce_game_over(self, winner_team_id: str = None):
-        """Announce game completion - programmatic"""
-        if winner_team_id:
-            winner = self.game.state.teams[winner_team_id]
-            announcement = f"🏆 GAME OVER! {winner.name} wins the battle!"
-        else:
-            announcement = f"🏁 GAME OVER! Match ended without clear winner."
-        
-        self.message_log.append({
-            'type': 'game_over',
-            'winner': winner_team_id,
-            'rounds': self.game.state.round_number,
-            'announcement': announcement,
-            'timestamp': datetime.now().isoformat()
-        })
-        
-        logger.info(f"[GAME_MASTER] {announcement}")
-        return announcement
-    
-    def get_game_master_log(self) -> List[Dict]:
-        """Get all game master announcements for logging"""
-        return self.message_log
-
+# =============================================================================
+# Game Controller
+# =============================================================================
 
 class BattleshipGame:
-    """Main battleship game controller"""
+    """Dynamic Battleship game with simultaneous execution - Alpha coordination vs Beta individual"""
     
-    def __init__(self, battleship_config_path: str, agent_network):
+    def __init__(self, battleship_config_path: str, agent_network, random_seed: Optional[int] = None):
         self.config = self._load_config(battleship_config_path)
         self.network = agent_network
         self.state = GameState()
-        self.coordinate_history: Dict[str, List[str]] = {}
-        
-        # Initialize programmatic game master (no LLM needed)
-        self.game_master = GameMaster(self)
-        
         self.memory_manager = GlobalMemoryManager()
+        self.grid_size = tuple(self.config["game_config"]["grid_size"])
         
-        # Game configuration - set BEFORE initializing teams
-        self.grid_size = tuple(self.config['game_config']['grid_size'])
+        if random_seed is not None:
+            random.seed(random_seed)
         
-        # Read communication rounds from config file
-        turn_config = self.config.get('turn_config', {})
-        self.max_communication_rounds = turn_config.get('max_team_communication_rounds', 3)
-        self.max_assistant_turns = turn_config.get('max_assistant_interaction_turns', 3)
-        
-        # Initialize teams (this may use self.grid_size)
         self._initialize_teams()
-        
-    def _load_config(self, config_path: str) -> Dict[str, Any]:
-        """Load battleship configuration"""
-        with open(config_path, 'r') as f:
-            return json.load(f)
-    
+        self._initialize_scores()
+
+    def _load_config(self, path: str) -> Dict[str, Any]:
+        """Load game configuration from JSON file"""
+        return json.loads(Path(path).read_text())
+
     def _initialize_teams(self):
         """Initialize teams from configuration"""
-        team_config = self.config['team_config']
+        team_config = self.config["team_config"]
         
         for team_id, team_data in team_config.items():
-            grid = GameGrid(size=self.grid_size)
             team = Team(
-                name=team_data['name'],
-                members=team_data['members'],
-                leader=team_data['leader'],
-                grid=grid,
-                color=team_data.get('color', 'blue')
+                name=team_data["name"],
+                members=team_data["members"],
+                grid=GameGrid(size=self.grid_size),
+                color=team_data.get("color", "blue"),
+                coordination_enabled=team_data.get("team_coordination", False)
             )
             self.state.teams[team_id] = team
-            
-            # Initialize coordinate history for team members
-            for member in team.members:
-                self.coordinate_history[member] = []
         
         logger.info(f"Initialized {len(self.state.teams)} teams")
-    
-    def coordinate_to_position(self, coordinate: str) -> Tuple[int, int]:
-        """Convert coordinate like 'B7' to grid position (1, 6)"""
-        if len(coordinate) < 2:
-            raise ValueError(f"Invalid coordinate format: {coordinate}")
+
+    def _initialize_scores(self):
+        """Initialize score tracking for all players"""
+        for team in self.state.teams.values():
+            for member in team.members:
+                self.state.player_scores[member] = PlayerScore(member)
+
+    # =============================================================================
+    # Coordinate and Position Utilities
+    # =============================================================================
+
+    def coordinate_to_position(self, coord: str) -> Tuple[int, int]:
+        """Convert coordinate string (e.g., 'A1') to grid position (0, 0)"""
+        coord = coord.strip().upper()
+        if len(coord) < 2:
+            raise ValueError(f"Invalid coordinate: {coord}")
         
-        letter = coordinate[0].upper()
-        number = coordinate[1:]
+        letter = coord[0]
+        number_str = coord[1:]
+        
+        if not letter.isalpha() or not number_str.isdigit():
+            raise ValueError(f"Invalid coordinate format: {coord}")
         
         row = ord(letter) - ord('A')
-        col = int(number) - 1
+        col = int(number_str) - 1
+        
+        if not (0 <= row < self.grid_size[0] and 0 <= col < self.grid_size[1]):
+            raise ValueError(f"Coordinate out of bounds: {coord}")
         
         return (row, col)
-    
-    def position_to_coordinate(self, position: Tuple[int, int]) -> str:
-        """Convert grid position (1, 6) to coordinate 'B7'"""
-        row, col = position
-        letter = chr(ord('A') + row)
-        number = str(col + 1)
-        return f"{letter}{number}"
-    
-    def _get_team_ship_positions(self, team_id: str) -> List[str]:
-        """Get list of coordinates where team's own ships are located"""
-        if team_id not in self.state.teams:
-            return []
-        
-        team = self.state.teams[team_id]
-        ship_positions = []
-        
-        for ship in team.grid.ships:
-            for position in ship.positions:
-                coordinate = self.position_to_coordinate(position)
-                ship_positions.append(coordinate)
-        
-        return sorted(ship_positions)
+
+    def position_to_coordinate(self, pos: Tuple[int, int]) -> str:
+        """Convert grid position to coordinate string"""
+        row, col = pos
+        return f"{chr(ord('A') + row)}{col + 1}"
 
     def _get_player_team_id(self, player_id: str) -> Optional[str]:
-        """Find which team a player belongs to"""
+        """Get team ID for a player"""
         for team_id, team in self.state.teams.items():
             if player_id in team.members:
                 return team_id
         return None
-    
+
+    def _get_enemy_team_id(self, team_id: str) -> Optional[str]:
+        """Get the enemy team ID"""
+        team_ids = list(self.state.teams.keys())
+        for tid in team_ids:
+            if tid != team_id:
+                return tid
+        return None
+
+    # =============================================================================
+    # Game Flow - NEW SIMULTANEOUS EXECUTION STRUCTURE
+    # =============================================================================
+
     async def start_game(self):
-        """Start the battleship game"""
-        await self._log_game_event("GAME_START", "Battleship game beginning")
+        """Main game flow with simultaneous execution"""
+        await self._log_event("GAME_START", "Dynamic Battleship game starting with simultaneous execution")
         
-        # Phase 1: Ship Placement
+        # Ship placement phase
         await self._ship_placement_phase()
         
-        # Phase 2: Battle Phase
-        await self._battle_phase()
+        # Battle phase - NEW STRUCTURE
+        await self._simultaneous_battle_phase()
         
-        # Phase 3: Game Over
+        # Game over
         await self._game_over_phase()
-    
+
     async def _ship_placement_phase(self):
         """Handle ship placement for all teams"""
         self.state.phase = GamePhase.SHIP_PLACEMENT
-        await self._log_game_event("PHASE_START", "Ship placement phase beginning")
+        await self._log_event("PHASE_START", "Ship placement phase beginning")
+        
+        ship_set = self.config["game_config"]["ship_sets"][
+            self.config["game_config"]["selected_ship_set"]
+        ]
         
         for team_id, team in self.state.teams.items():
-            await self._team_ship_placement(team_id, team)
-        
-        await self._log_game_event("PHASE_END", "All teams have placed their ships")
-    
-    async def _team_ship_placement(self, team_id: str, team: Team):
-        """Handle ship placement for a single team"""
-        logger.info(f"[SHIP_PLACEMENT] {team.name} beginning ship placement")
-        
-        # Get ship configuration
-        ship_set = self.config['game_config']['ship_sets'][
-            self.config['game_config']['selected_ship_set']
-        ]
-        
-        # Read deliberation rounds from team config
-        team_config = self.config['team_config'][team_id]
-        deliberation_turns = team_config.get('ship_placement_deliberation_turns', 
-                            self.config.get('game_phases', {}).get('ship_placement', {}).get('max_deliberation_turns', 3))
-        
-        logger.info(f"[SHIP_PLACEMENT] {team.name} will have {deliberation_turns} deliberation rounds")
-        
-        # Team deliberation with configurable rounds
-        await self._ship_placement_discussion(team_id, team.leader, deliberation_turns)
+            ships = self._assign_ships_to_players(team, ship_set)
+            self._auto_place_ships(team, ships)
+            
+            # Record ship ownership in memory
+            ship_assignments = {
+                ship.owner_id: {"name": ship.name, "size": ship.size}
+                for ship in ships
+            }
+            self.memory_manager.initialize_ship_ownership(ship_assignments)
+            
+            await self._log_event("SHIP_PLACEMENT", 
+                                f"{team.name} completed placement - {len(ships)} ships")
 
-        # Auto-place ships
-        self._auto_place_ships(team, ship_set)
-        team.ship_placement_complete = True
-        
-        logger.info(f"[SHIP_PLACEMENT] {team.name} completed ship placement - {len(team.grid.ships)} ships placed")
-
-    async def _ship_placement_discussion(self, team_id: str, leader_id: str, max_rounds: int):
-        """CLEAN ship placement: Leader asks -> Players respond -> Leader decides"""
-        team = self.state.teams[team_id]
-        other_members = [m for m in team.members if m != leader_id]
-        
-        if not other_members:
-            logger.info(f"[SHIP_PLACEMENT] {team.name} - Leader {leader_id} deciding alone (no team members)")
-            return
-        
-        ship_placement_questions = [
-            "Where should we place our Carrier (5 spaces)? Edge or center?",
-            "Battleship (4 spaces) - horizontal or vertical? Which area?", 
-            "Small ships strategy - cluster for defense or scatter for coverage?"
-        ]
-        
-        # Collect all player inputs across all rounds
-        all_player_inputs = []
-        
-        for round_num in range(min(max_rounds, len(ship_placement_questions))):
-            question = ship_placement_questions[round_num]
-            
-            logger.info(f"[SHIP_PLACEMENT] {team.name} Round {round_num + 1}/{max_rounds}: {question}")
-            
-            # Step 1: Leader asks the ACTUAL QUESTION to all players at once
-            # Send the question directly - NO generic prompts
-            for member in other_members:
-                await self._send_clean_message(leader_id, member, question)
-            
-            # Step 2: Each player responds with their input
-            # We let the conversation system handle the responses naturally
-            # The responses will be captured in the conversation logs
-            
-            # Brief pause to let responses complete
-            await asyncio.sleep(1)
-        
-        # Step 3: Leader makes final decision based on all inputs
-        if max_rounds > 0:
-            # Create summary of what was discussed
-            discussed_topics = ship_placement_questions[:max_rounds]
-            
-            # Leader makes internal decision (no broadcast needed for simulation)
-            logger.info(f"[SHIP_PLACEMENT] {team.name} - Leader {leader_id} making final decisions based on: {', '.join(discussed_topics)}")
-            
-            # Optional: Leader could announce decision in a real implementation
-            # For simulation, we skip the decision announcement to avoid extra messages
-
-
-    async def _send_battle_message(self, sender: str, recipient: str, question: str):
-        """
-        Send a tactical question during battle - ENHANCED with ship awareness
-        """
-        # Get forbidden coordinates
-        all_attempted = self._get_all_attempted_coordinates()
-        
-        # Get own team's ship positions
-        team_id = self._get_player_team_id(sender)
-        own_ships = self._get_team_ship_positions(team_id) if team_id else []
-        
-        prompt = (
-            f"{question}\n\n"
-            f"FORBIDDEN COORDINATES: {', '.join(all_attempted) if all_attempted else 'None yet'}\n"
-            f"OWN SHIP LOCATIONS: {', '.join(own_ships) if own_ships else 'None'} (Don't attack these!)\n\n"
-            "Suggest ENEMY coordinate for attack. Avoid forbidden coordinates and own ships.\n"
-            "Format: COORDINATE: [A1] - REASONING: [why]\n"
-            "Maximum 25 words."
-        )
-        try:
-            await self.network.send_message(
-                sender_id=sender,
-                receiver_id=recipient,
-                message=prompt,
-                max_turns=1
-            )
-        except Exception as e:
-            logger.error(f"Failed battle message {sender}->{recipient}: {e}")
-
-    
-    def _get_leader_style(self, leader_id: str) -> str:
-        """Get leader's decision-making style"""
-        agent_assignment = self.config['agent_assignments'].get(leader_id, {})
-        profile_name = agent_assignment.get('profile', '')
-        profile = self.config['player_profiles'].get(profile_name, {})
-        return profile.get('leadership_style', 'collaborative')
-
-    async def _send_clean_message(self, sender: str, recipient: str, message: str):
-        """Send clean message without generic prompts - UPDATED for ship placement"""    
-        try:
-            # For ship placement, no forbidden coordinates needed
-            clean_message = f"{message}\n\nReminder: Maximum 50 words."
-            
-            await self.network.send_message(
-                sender_id=sender,
-                receiver_id=recipient, 
-                message=clean_message,
-                max_turns=1
-            )
-        except Exception as e:
-            logger.error(f"Failed clean message {sender} -> {recipient}: {e}")
-    
-    def _auto_place_ships(self, team: Team, ship_set: List[Dict]):
-        """Auto-place ships randomly for simulation"""
-        for ship_config in ship_set:
-            for _ in range(ship_config['quantity']):
-                ship = Ship(name=ship_config['name'], size=ship_config['size'])
-                
-                # Try to place ship randomly
-                max_attempts = 100
-                for attempt in range(max_attempts):
-                    row = random.randint(0, self.grid_size[0] - 1)
-                    col = random.randint(0, self.grid_size[1] - 1)
-                    orientation = random.choice(['horizontal', 'vertical'])
-                    
-                    if team.grid.place_ship(ship, (row, col), orientation):
-                        logger.info(f"Placed {ship.name} at {self.position_to_coordinate((row, col))} ({orientation})")
-                        break
-                else:
-                    logger.error(f"Failed to place {ship.name} after {max_attempts} attempts")
-    
-    async def _battle_phase(self):
-        """Main battle phase with turn-based gameplay"""
+    async def _simultaneous_battle_phase(self):
+        """NEW: Main battle phase with simultaneous execution structure"""
         self.state.phase = GamePhase.BATTLE
-        await self._log_game_event("PHASE_START", "Battle phase beginning")
+        await self._log_event("PHASE_START", "Battle phase beginning - SIMULTANEOUS EXECUTION MODE")
         
-        team_ids = list(self.state.teams.keys())
+        max_rounds = self.config["game_config"].get("max_rounds", 100)
         
-        while not self._check_victory_condition():
-            # Each team takes their turn
-            for team_id in team_ids:
-                if self._check_victory_condition():
-                    break
-                
-                await self._team_battle_round(team_id)
-                
-                # Share round results with team
-                await self._share_round_results(team_id)
+        while not self._check_victory() and self.state.round_number <= max_rounds:
+            await self._log_event("ROUND_START", f"Round {self.state.round_number} beginning")
+            
+            # Phase 1: Team Alpha Deliberation (if coordination enabled)
+            alpha_actions = await self._alpha_deliberation_phase()
+            
+            # Phase 2: Team Beta Individual Decisions  
+            beta_actions = await self._beta_individual_phase()
+            
+            # Phase 3: SIMULTANEOUS EXECUTION
+            await self._execute_simultaneous_actions(alpha_actions, beta_actions)
             
             self.state.round_number += 1
-            
-            # Safety check to prevent infinite games
-            if self.state.round_number > 100:
-                await self._log_game_event("GAME_TIMEOUT", "Game ended due to round limit")
+        
+        if self.state.round_number > max_rounds:
+            await self._log_event("GAME_TIMEOUT", f"Game ended due to round limit ({max_rounds})")
+
+    # =============================================================================
+    # NEW: Alpha Team 3-Phase Deliberation Protocol  
+    # =============================================================================
+
+    async def _alpha_deliberation_phase(self) -> Dict[str, Optional[PlayerAction]]:
+        """NEW: Alpha team 3-phase deliberation protocol"""
+        alpha_team_id = None
+        alpha_actions = {}
+        
+        # Find Alpha team (coordination enabled)
+        for team_id, team in self.state.teams.items():
+            if team.coordination_enabled:
+                alpha_team_id = team_id
                 break
+        
+        if not alpha_team_id:
+            # No coordination team found
+            return {}
+        
+        team = self.state.teams[alpha_team_id]
+        active_members = [m for m in team.members if m not in self.state.eliminated_players]
+        
+        if not active_members:
+            return {}
+        
+        await self._log_event("ALPHA_DELIBERATION_START", 
+                             f"{team.name} beginning 3-phase deliberation - Round {self.state.round_number}")
+        
+        # Step 1: Team Strategy Proposals (Broadcast)
+        proposals = await self._step1_team_strategy_proposals(alpha_team_id, active_members)
+        
+        # Step 2: Democratic Voting
+        votes = await self._step2_democratic_voting(alpha_team_id, active_members, proposals)
+        
+        # Step 3: Plan Selection
+        winning_plan = await self._step3_plan_selection(alpha_team_id, active_members, proposals, votes)
+        
+        # Parse winning plan into actions
+        if winning_plan and winning_plan.team_actions:
+            alpha_actions = winning_plan.team_actions
+        
+        await self._log_event("ALPHA_DELIBERATION_COMPLETE", 
+                             f"{team.name} deliberation complete - {len(alpha_actions)} actions")
+        
+        return alpha_actions
+
+    async def _step1_team_strategy_proposals(self, team_id: str, members: List[str]) -> List[TeamProposal]:
+        """Step 1: Team Strategy Proposals (parallel); then broadcast summary with ACK-only instruction."""
+        await self._log_event("ALPHA_STEP1", "Team Strategy Proposals - Simple")
+
+        proposals: List[TeamProposal] = []
+        team_context = self._get_team_context(team_id, members)
+
+        # EACH MEMBER GETS EXACTLY ONE PROMPT
+        for member in members:
+            proposal_prompt = (
+            f"{team_context}\n\n"
+            "🎯 STEP 1: TEAM STRATEGY PROPOSALS\n"
+            "Propose a complete strategy for your entire team.\n"
+            "Format: PROPOSAL: [player_name] [ACTION] [target], [player_name] [ACTION] [target], [player_name] [ACTION] [target] - [reasoning]\n"
+            "Valid actions: BOMB [A1-J10] or MOVE [UP/DOWN/LEFT/RIGHT/ROTATE]\n"
+            "\n"
+            "⚠️ CRITICAL COORDINATION RULES:\n"
+            "• Choose DIFFERENT coordinates for each teammate - no duplicates!\n"
+            "• Spread attacks across the grid for maximum coverage\n"
+            "• Avoid previously attacked coordinates from battlefield intel\n"
+            "• Consider ship safety when proposing movements\n"
+            "\n"
+            f"{member}, give your team proposal now:"
+        )
+            try:
+                result = await self.network.send_message(
+                    "game_master", member, proposal_prompt,
+                    max_turns=1, conversation_type="team_proposal"
+                )
+                proposal_content = self._extract_content_from_conversation(result, member)
+                team_proposal = self._parse_team_proposal(member, proposal_content, members)
+                if team_proposal:
+                    proposals.append(team_proposal)
+                    logger.info(f"✅ [PROPOSAL] {member}: {team_proposal.reasoning}")
+                else:
+                    logger.warning(f"❌ Failed to parse proposal from {member}")
+            except Exception as e:
+                logger.error(f"Proposal failed for {member}: {e}")
+
+        # Broadcast proposals summary with ACK-only rule
+        if proposals:
+            proposals_summary = self._format_proposals_summary(proposals, include_reasoning=True)
+            broadcast = (
+                f"{proposals_summary}\n\n"
+                "📢 INSTRUCTION: This is an informational broadcast.\n"
+                "Do NOT propose actions or discuss here.\n"
+                "Reply with EXACTLY one word: ACK\n"
+            )
+            logger.info("📢 Showing all proposals to team (ACK-only)...")
+            for member in members:
+                await self.network.send_message(
+                    "game_master", member, broadcast,
+                    max_turns=1, conversation_type="proposals_summary"
+                )
+
+        return proposals
+
+
+    def _format_proposals_summary(self, proposals: List[TeamProposal], *, include_reasoning: bool = True) -> str:
+        """Format a human-readable summary of proposals for prompts."""
+        if not proposals:
+            return "No proposals available."
+        lines = ["📋 TEAM PROPOSALS SUMMARY"]
+        for i, proposal in enumerate(proposals, 1):
+            lines.append(f"\n{i}. {proposal.proposer_id}'s plan:")
+            for player, action in proposal.team_actions.items():
+                action_str = f"{action.action_type.value} {action.target}" if action else "NO ACTION"
+                lines.append(f"   - {player}: {action_str}")
+            if include_reasoning:
+                lines.append(f"   Reasoning: {proposal.reasoning}")
+        return "\n".join(lines)
+
     
-    async def _team_battle_round(self, team_id: str):
-        """One team's complete round - all members take turns"""
+    async def _step2_democratic_voting(self, team_id: str, members: List[str],
+                                   proposals: List[TeamProposal]) -> Dict[str, str]:
+        """Step 2: Democratic voting with embedded game intel + proposals, neutral prompt, and one corrective retry."""
+        await self._log_event("ALPHA_STEP2", "Democratic Voting - Neutral with Intel")
+
+        votes: Dict[str, str] = {}
+        if not proposals:
+            logger.warning("No proposals to vote on")
+            return votes
+
+        # ===== Build compact game intel =====
         team = self.state.teams[team_id]
-        self.state.current_team = team_id
-        
-        await self._log_game_event("TEAM_ROUND_START", 
-                                  f"{team.name} starting round {self.state.round_number}",
-                                  {"team": team_id, "round": self.state.round_number})
-        
-        # Determine turn order (can be random or predetermined)
-        turn_order = team.members.copy()
-        if self.config.get('turn_config', {}).get('random_order', False):
-            random.shuffle(turn_order)
-        
-        # Each player takes their individual turn
-        for player_id in turn_order:
-            if self._check_victory_condition():
-                break
-            
-            await self._player_turn(player_id, team_id)
-    
-    # Inside your BattleshipGame class:
+        enemy_team_id = self._get_enemy_team_id(team_id)
+        enemy_name = self.state.teams[enemy_team_id].name if enemy_team_id else "Unknown"
 
-    async def _player_turn(self, player_id: str, team_id: str):
-        """
-        One player's turn:
-        1. Stamp turn start (for advice filtering)
-        2. Log the turn start
-        3. Fetch the player's profile
-        4. Run consultation (assistant + team)
-        5. Make the coordinate call and execute the attack
-        """
-        # 1️⃣ Mark when this turn begins
-        self.turn_start_ts = asyncio.get_event_loop().time()
+        intel_lines = [
+            f"[ROUND {self.state.round_number}]",
+            f"Team: {team.name}  |  Enemy: {enemy_name}"
+        ]
+        # Own ship status snapshot for voting context
+        for member in members:
+            ship = team.grid.get_ship_by_owner(member)
+            if not ship:
+                continue
+            status = "SUNK" if ship.is_sunk else ("DAMAGED" if ship.hits > 0 else "OK")
+            pos = self.position_to_coordinate(ship.positions[0]) if ship.positions else "?"
+            intel_lines.append(f"- {member}: {ship.name} (size {ship.size}) {status} at {pos} ({ship.orientation})")
+        # Battlefield memory summary (hits/misses/sinks/etc.)
+        try:
+            mem = self.memory_manager.generate_dynamic_battlefield_summary()
+            if mem and "No battlefield activity" not in mem:
+                intel_lines.append("\nBattlefield Intel:\n" + mem.strip())
+        except Exception:
+            pass
+        intel_context = "\n".join(intel_lines)
 
-        # 2️⃣ Log the turn start
-        self.state.current_player = player_id
-        await self._log_game_event(
-            "PLAYER_TURN_START",
-            f"{player_id} starting turn",
-            {"player": player_id, "team": team_id}
+        # ===== Format proposals for inclusion in the vote prompt =====
+        def _fmt_proposals_summary(items: List[TeamProposal]) -> str:
+            lines = ["📋 TEAM PROPOSALS SUMMARY"]
+            for i, proposal in enumerate(items, 1):
+                lines.append(f"\n{i}. {proposal.proposer_id}'s plan:")
+                for player, action in proposal.team_actions.items():
+                    action_str = f"{action.action_type.value} {action.target}" if action else "NO ACTION"
+                    lines.append(f"   - {player}: {action_str}")
+                lines.append(f"   Reasoning: {proposal.reasoning}")
+            return "\n".join(lines)
+
+        proposals_context = _fmt_proposals_summary(proposals)
+
+        proposer_names = [p.proposer_id for p in proposals]
+        # Neutralize position bias: round-seeded shuffle for reproducibility
+        rnd = random.Random(self.state.round_number)
+        proposer_order = rnd.sample(proposer_names, k=len(proposer_names))
+        proposer_list_neutral = ", ".join(proposer_order)
+
+        # ===== Enhanced strategic vote prompt =====
+        base_vote_prompt = (
+            f"{intel_context}\n\n"
+            f"{proposals_context}\n\n"
+            "🗳️ STRATEGIC VOTING (ALPHA STEP 2)\n"
+            "WHAT'S AT STAKE:\n"
+            "• YOUR SURVIVAL: If your ship is sunk, YOU ARE ELIMINATED from the game\n"
+            "• TEAM FIREPOWER: Each teammate eliminated = less firepower next round\n"
+            "• VICTORY CONDITION: First team to sink ALL enemy ships wins\n\n"
+            "Choose the plan most likely to achieve TEAM VICTORY while considering:\n"
+            "🎯 OFFENSIVE STRATEGY:\n"
+            "  • Coverage without same-team duplication (wasted shots)\n"
+            "  • Hit probability and follow-up potential\n"
+            "  • Targeting untested areas vs. focusing fire\n\n"
+            "🛡️ DEFENSIVE STRATEGY:\n"
+            "  • Ship safety - avoid exposing damaged ships to counterattack\n"
+            "  • Movement risk vs. benefit (repositioning can be good or dangerous)\n"
+            "  • Preserve team firepower - every ship that survives = more attacks next round\n\n"
+            "🏆 TEAM DYNAMICS:\n"
+            "  • Think beyond personal survival - you need teammates to win\n"
+            "  • A coordinated mediocre plan beats an uncoordinated great plan\n"
+            "  • Consider which plan gives the TEAM the best chance to win\n\n"
+            "REQUIRED OUTPUT (ONE LINE ONLY):\n"
+            "VOTE: <proposer_id> - <strategic reasoning>\n"
+            f"Available plans: {proposer_list_neutral}\n"
+            "Focus on TEAM VICTORY, not loyalty to any individual proposer."
         )
 
-        # 3️⃣ Fetch this player's profile from config
-        player_config = self.config['agent_assignments'].get(player_id, {})
-        profile = self.config['player_profiles'].get(player_config.get('profile', ''), {})
+        correction_vote_prompt = (
+            f"{intel_context}\n\n"
+            f"{proposals_context}\n\n"
+            "⚠️ VOTING FORMAT ERROR - Your previous reply was invalid.\n"
+            "Remember: Your ship's survival AND team victory both depend on this choice.\n"
+            "REPLY WITH EXACTLY ONE LINE:\n"
+            "VOTE: <proposer_id> - <strategic reasoning>\n"
+            f"Available plans: {proposer_list_neutral}\n"
+            "Choose the plan that maximizes TEAM VICTORY probability."
+)   
 
-        # 4️⃣ Consultation phase (assistant + teammates), now correctly passing profile
-        await self._player_consultation_phase(player_id, team_id, profile)
-
-        # 5️⃣ Coordinate decision & attack
-        coordinate = await self._player_coordinate_call(player_id, team_id)
-        if coordinate:
-            await self._execute_attack(player_id, team_id, coordinate)
-
-
-    
-    async def _player_consultation_phase(self, player_id: str, team_id: str, profile: Dict):
-        """Player consultation with AI assistant and/or team"""
-        assistant_reliance = profile.get('assistant_reliance', 'medium')
-        decision_speed = profile.get('decision_speed', 'medium')
-        
-        logger.info(f"[BATTLE] [R{self.state.round_number}] {player_id} consultation phase - reliance: {assistant_reliance}")
-        
-        # Always try assistant first if available
-        agent_assignment = self.config['agent_assignments'].get(player_id, {})
-        has_assistant = agent_assignment.get('has_assistant', False)
-        
-        if has_assistant:
-            logger.info(f"[BATTLE] [R{self.state.round_number}] {player_id} consulting AI assistant")
-            await self._consult_ai_assistant(player_id)
-        else:
-            logger.info(f"[BATTLE] [R{self.state.round_number}] {player_id} has no AI assistant")
-        
-        # Then team consultation based on profile
-        if assistant_reliance == 'high':
-            # High reliance: minimal team consultation
-            if decision_speed != 'fast':
-                logger.info(f"[BATTLE] [R{self.state.round_number}] {player_id} brief team consultation")
-                await self._team_consultation(player_id, team_id)
-        elif assistant_reliance == 'low':
-            # Low reliance: extensive team consultation
-            logger.info(f"[BATTLE] [R{self.state.round_number}] {player_id} extensive team consultation")
-            await self._team_consultation(player_id, team_id)
-        else:
-            # Medium reliance: balanced approach
-            logger.info(f"[BATTLE] [R{self.state.round_number}] {player_id} standard team consultation")
-            await self._team_consultation(player_id, team_id)
-
-    async def _consult_ai_assistant(self, player_id: str):
-        """Player consults with their AI assistant - ENHANCED with ship awareness"""
-        agent_assignment = self.config['agent_assignments'].get(player_id, {})
-        assistant_id = agent_assignment.get('assistant_id')
-        
-        if not assistant_id or not agent_assignment.get('has_assistant', False):
-            return
-        
-        # Get current game context (now includes own ship positions)
-        game_context = self._build_game_context_for_player(player_id)
-        
-        # Get forbidden coordinates (already attempted)
-        all_attempted = self._get_all_attempted_coordinates()
-        
-        # Get own team's ship positions (don't attack your own ships!)
-        team_id = self._get_player_team_id(player_id)
-        own_ships = self._get_team_ship_positions(team_id) if team_id else []
-        
-        # ENHANCED assistant prompt
-        consultation_prompt = f"""Battle situation:
-    {game_context}
-
-    FORBIDDEN COORDINATES: {', '.join(all_attempted) if all_attempted else 'None yet'}
-    OWN SHIP LOCATIONS: {', '.join(own_ships) if own_ships else 'None'} (Don't attack these!)
-
-    Suggest ENEMY coordinate for attack. Avoid forbidden coordinates and own ships.
-    Format: COORDINATE: [A1] - REASONING: [why]
-    Maximum 25 words."""
-        
-        try:
-            await self.network.send_message(
-                sender_id=player_id,
-                receiver_id=assistant_id,
-                message=consultation_prompt,
-                max_turns=1
-            )
-            
-            logger.info(f"[BATTLE] [R{self.state.round_number}] {player_id} consulted {assistant_id}")
-                                        
-        except Exception as e:
-            logger.error(f"Failed AI consultation for {player_id}: {e}")
-    
-    async def _team_consultation(self, player_id: str, team_id: str):
-        """Player consultation with team members"""
-        team = self.state.teams[team_id]
-        other_members = [m for m in team.members if m != player_id]
-        
-        if not other_members:
-            return
-        
-        # Conduct team discussion with meaningful topics
-        await self._team_discussion(team_id, player_id)
-    
-    async def _team_discussion(self, team_id: str, active_player: str):
-        team = self.state.teams[team_id]
-        other_members = [m for m in team.members if m != active_player]
-        if not other_members:
-            return
-
-        discussion_questions = self._generate_battle_questions(team_id, active_player)
-
-        for round_num in range(min(self.max_communication_rounds, len(discussion_questions))):
-            question = discussion_questions[round_num]
-            logger.info(f"[BATTLE] [R{self.state.round_number}] {active_player} asking: {question}")
-
-            # → Use the new helper to enforce coordinate format
-            for member in other_members:
-                await self._send_battle_message(active_player, member, question)
-
-            await asyncio.sleep(0.5)
-
-    
-    def _get_recent_team_coords(self, team_id: str) -> List[str]:
-        """Get recent coordinates attempted by this team"""
-        recent_team_coords = []
-        
-        team = self.state.teams.get(team_id)
-        if team:
-            for member in team.members:
-                if member in self.coordinate_history:
-                    # Get last 2 coordinates per team member
-                    recent_team_coords.extend(self.coordinate_history[member][-2:])
-        
-        return recent_team_coords
-    
-    def _generate_battle_questions(self, team_id: str, active_player: str) -> List[str]:
-        """Generate tactical questions without giving away coordinates"""
-        all_attempted = self._get_all_attempted_coordinates()
-        
-        if len(all_attempted) < 3:
-            questions = [
-                "Should I target center areas or edges first?",
-                "Go systematic or random hunting?"
-            ]
-        elif len(all_attempted) < 8:
-            questions = [
-                "Continue current search pattern or switch zones?", 
-                "Focus on unexplored areas or follow up on hits?"
-            ]
-        else:
-            questions = [
-                "Any patterns you noticed in their ship placement?",
-                "Should I target near previous hits or try new area?"
-            ]
-        
-        return questions[:2]
-
-
-    def _get_all_valid_coordinates(self, attempted_coords: List[str]) -> List[str]:
-        """Get all valid coordinates excluding already attempted ones"""
-        valid_coords = []
-        for row in range(self.grid_size[0]):
-            for col in range(self.grid_size[1]):
-                coord = self.position_to_coordinate((row, col))
-                if coord not in attempted_coords:
-                    valid_coords.append(coord)
-        return valid_coords
-    
-    def _count_recent_hits(self, player_id: str) -> int:
-        """Count recent hits for context (placeholder implementation)"""
-        return len(self.coordinate_history.get(player_id, [])) % 3
-    
-    async def _send_team_message(self, sender: str, recipients: List[str], message: str):
-        """Send message to multiple recipients cleanly"""
-        for recipient in recipients:
-            if sender != recipient:
-                await self._send_clean_message(sender, recipient, message)
-    
-    def _get_all_attempted_coordinates(self) -> List[str]:
-        """Get all coordinates attempted by both teams"""
-        all_attempted = set()
-        for team_data in self.state.teams.values():
-            for member in team_data.members:
-                if member in self.coordinate_history:
-                    all_attempted.update(self.coordinate_history[member])
-        return sorted(list(all_attempted))
-
-    
-    def _generate_random_coordinate(self, player_id: str, avoid_coords: List[str]) -> str:
-        """Generate random coordinate avoiding already attempted coordinates"""
-        max_attempts = 100  # Increased for safety
-        for _ in range(max_attempts):
-            row = random.randint(0, self.grid_size[0] - 1)
-            col = random.randint(0, self.grid_size[1] - 1)
-            coordinate = self.position_to_coordinate((row, col))
-            
-            if coordinate not in avoid_coords:
-                logger.info(f"[COORD_CHOICE] {player_id} using random coordinate: {coordinate}")
-                return coordinate
-        
-        # Emergency fallback - find ANY untried coordinate
-        all_possible = []
-        for row in range(self.grid_size[0]):
-            for col in range(self.grid_size[1]):
-                coord = self.position_to_coordinate((row, col))
-                if coord not in avoid_coords:
-                    all_possible.append(coord)
-        
-        if all_possible:
-            chosen = random.choice(all_possible)
-            logger.warning(f"[COORD_CHOICE] {player_id} emergency fallback coordinate: {chosen}")
-            return chosen
-        
-        # This should never happen in a 10x10 grid unless all 100 squares are tried
-        logger.error(f"[COORD_CHOICE] {player_id} NO AVAILABLE COORDINATES! Using A1 as last resort")
-        return "A1"
-    
-    def _extract_coordinate_from_message(self, conversation: Dict) -> Optional[str]:
-        """
-        Extract only from the agent’s reply (not the prompt),
-        and skip any game_master messages.
-        """
-        import re
-
-        chat_result = conversation.get('chat_result')
-        if not chat_result or not hasattr(chat_result, 'chat_history'):
-            return None
-
-        for msg in chat_result.chat_history:
-            speaker = msg.get('name') or msg.get('role', '')
-            content = msg.get('content', '')
-
-            # 1) Skip the game_master’s own prompt
-            if speaker == "game_master":
-                continue
-
-            # 2) Look for an explicit COORDINATE: [X#] in the agent’s reply
-            m = re.search(r'COORDINATE:\s*\[?([A-J](?:10|[1-9]))\]?', content)
-            if m:
-                return m.group(1)
-
-        return None
-    
-    def _parse_coordinate_from_text(self, text: str) -> Optional[str]:
-        import re
-        
-        # # Debug: Print what we're trying to parse
-        # print(f"DEBUG PARSING: {text}")
-        
-        # Look for COORDINATE: [A1] format first
-        coordinate_pattern = r'COORDINATE:\s*\[?([A-J][1-9]|[A-J]10)\]?'
-        match = re.search(coordinate_pattern, text)
-        if match:
-            # print(f"DEBUG FOUND: {match.group(1)}")
-            return match.group(1)
-        
-        return None
-    
-    def _consolidate_advice_for_player(self, player_id: str) -> str:
-        """
-        Pull only advice messages (assistant or teammate) that arrived
-        after self.turn_start_ts for the given player_id.
-        """
-        tracker = getattr(self.network, 'conversation_tracker', None)
-        if not tracker:
-            return ""
-
-        since = getattr(self, 'turn_start_ts', 0.0)
-        advice_items = []
-        seen = set()
-        kws = {'target','focus','avoid','center','edge','corner','pattern','cluster','switch','continue'}
-
-        # Look at all convs _involving_ this agent (we’ll filter by timestamp ourselves)
-        for conv in tracker.get_agent_conversations(player_id, recent_only=False):
-            # Skip convs that began before this turn
-            if conv.get('timestamp', 0.0) < since:
-                continue
-
-            for msg in conv.get('messages', []):
-                # Only messages _to_ this player AND only messages since turn start
-                if msg['speaker'] == player_id or msg.get('timestamp', 0.0) < since:
-                    continue
-
-                giver = msg['speaker']
-                content = msg['content']
-
-                # 1) Coordinate suggestions
-                coord = tracker._parse_coordinate_from_text(content)
-                if coord:
-                    key = (giver, 'coord', coord)
-                    if key not in seen:
-                        prefix = '🤖' if 'assistant' in giver else '👥'
-                        advice_items.append(f"{prefix} {giver}: Suggests {coord}")
-                        seen.add(key)
-                    continue
-
-                # 2) Strategic advice via keywords
-                if len(content) > 20 and any(k in content.lower() for k in kws):
-                    key = (giver, 'strat', content[:30])
-                    if key not in seen:
-                        summary = content[:60].rstrip() + ('…' if len(content) > 60 else '')
-                        prefix = '🤖' if 'assistant' in giver else '👥'
-                        advice_items.append(f"{prefix} {giver}: {summary}")
-                        seen.add(key)
-
-        return "\n".join(advice_items)
-
-    
-    async def _player_coordinate_call(self, player_id: str, team_id: str) -> Optional[str]:
-        """
-        ENHANCED: AI coordinate decision with own ship awareness
-        """
-        assignment = self.config['agent_assignments'].get(player_id, {})
-        profile_name = assignment.get('profile', '')
-        profile = self.config['player_profiles'].get(profile_name, {})
-
-        advice_summary = self._consolidate_advice_for_player(player_id)
-        game_context = self._build_game_context_for_player(player_id)  # Now includes own ships
-        memory_context = self._build_memory_context(player_id)
-        all_attempted = self._get_all_attempted_coordinates()
-        
-        # Get own team's ship positions
-        own_ships = self._get_team_ship_positions(team_id)
-        
-        profile_desc = profile.get('description', '')
-        reliance = profile.get('assistant_reliance', 'medium')
-
-        # ENHANCED decision prompt with ship awareness
-        decision_prompt = f"""COORDINATE SELECTION - {profile_desc}
-
-    {game_context}
-
-    {memory_context}
-
-    FORBIDDEN: {', '.join(all_attempted) if all_attempted else 'None yet'}
-    OWN SHIPS: {', '.join(own_ships) if own_ships else 'None'} (Don't attack these!)
-
-    ADVICE RECEIVED:
-    {advice_summary if advice_summary else 'No advice - use your judgment'}
-
-    PROFILE: {profile_name.replace('_', ' ')}
-    - Assistant reliance: {reliance}
-    - Risk tolerance: {profile.get('risk_tolerance', 'medium')}  
-    - Decision speed: {profile.get('decision_speed', 'medium')}
-
-    Choose ENEMY coordinate to attack. Avoid forbidden coordinates and own ships.
-    REQUIRED FORMAT: COORDINATE: [X#]"""
-
-        try:
-            conv = await self.network.send_message(
-                sender_id="game_master",
-                receiver_id=player_id,
-                message=decision_prompt,
-                max_turns=1
-            )
-
-            coordinate = self._extract_coordinate_from_message(conv)
-            
-            # Validate coordinate is not own ship or forbidden
-            if coordinate and coordinate not in all_attempted and coordinate not in own_ships:
-                logger.info(f"[AI_DECISION] {player_id} chose: {coordinate}")
-                return coordinate
-            
-            # ENHANCED retry with ship awareness
-            if coordinate in all_attempted or coordinate in own_ships:
-                issue = "forbidden" if coordinate in all_attempted else "your own ship"
-                logger.warning(f"[AI_DECISION] {player_id} chose {issue} {coordinate}, retrying")
-                
-                retry_prompt = f"""RETRY: Your choice {coordinate} is {issue}.
-    FORBIDDEN: {', '.join(all_attempted)}
-    OWN SHIPS: {', '.join(own_ships)} (Don't attack these!)
-    Choose a DIFFERENT ENEMY coordinate.
-    FORMAT: COORDINATE: [X#]"""
-                
-                retry_conv = await self.network.send_message(
-                    sender_id="game_master",
-                    receiver_id=player_id,
-                    message=retry_prompt,
-                    max_turns=1
+        # ===== Collect votes (strict schema + one corrective retry) =====
+        for member in members:
+            try:
+                # First attempt
+                result = await self.network.send_message(
+                    "game_master", member, base_vote_prompt,
+                    max_turns=1, conversation_type="voting"
                 )
-                
-                retry_coordinate = self._extract_coordinate_from_message(retry_conv)
-                if (retry_coordinate and 
-                    retry_coordinate not in all_attempted and 
-                    retry_coordinate not in own_ships):
-                    logger.info(f"[AI_DECISION] {player_id} retry success: {retry_coordinate}")
-                    return retry_coordinate
+                vote_content = self._extract_content_from_conversation(result, member)
+                voted_for = self._parse_vote(vote_content, proposer_names)
 
-        except Exception as e:
-            logger.error(f"[AI_DECISION] {player_id} failed: {e}")
+                # Guard against action-like replies or parse failure; one corrective retry
+                needs_retry = (not voted_for) or re.search(r'\b(BOMB|MOVE)\b', vote_content or "", re.IGNORECASE)
+                if needs_retry:
+                    result = await self.network.send_message(
+                        "game_master", member, correction_vote_prompt,
+                        max_turns=1, conversation_type="voting_correction"
+                    )
+                    vote_content = self._extract_content_from_conversation(result, member)
+                    voted_for = self._parse_vote(vote_content, proposer_names)
 
-        # FINAL FALLBACK: Valid coordinate that's not own ship
-        return self._get_emergency_coordinate(player_id, all_attempted, own_ships)
+                if voted_for:
+                    votes[member] = voted_for
+                    reasoning = self._extract_vote_reasoning(vote_content)
+                    logger.info(f"🗳️ {member} voted for {voted_for}: {reasoning}")
+                else:
+                    logger.warning(f"❌ Failed to parse vote from {member}: {vote_content}")
 
-    
-    def _get_emergency_coordinate(self, player_id: str, all_attempted: List[str], own_ships: List[str] = None) -> str:
-        """
-        ENHANCED: Emergency coordinate avoiding own ships too
-        """
-        if own_ships is None:
-            own_ships = []
-        
-        avoid_coords = set(all_attempted + own_ships)
-        valid_coords = []
-        
-        for row in range(self.grid_size[0]):
-            for col in range(self.grid_size[1]):
-                coord = self.position_to_coordinate((row, col))
-                if coord not in avoid_coords:
-                    valid_coords.append(coord)
-        
-        if not valid_coords:
-            logger.error(f"[EMERGENCY] No valid coordinates remaining!")
-            return "A1"  # Should never happen
-        
-        # Pick random valid coordinate
-        import random
-        chosen = random.choice(valid_coords)
-        logger.warning(f"[EMERGENCY] {player_id} emergency fallback: {chosen}")
-        return chosen
-    
-    async def _execute_attack(self, player_id: str, team_id: str, coordinate: str):
-        """Execute the attack and report results"""
-        try:
-            position = self.coordinate_to_position(coordinate)
-            
-            # Find target team
-            target_team_id = None
-            for tid, team in self.state.teams.items():
-                if tid != team_id:
-                    target_team_id = tid
-                    break
-            
-            if not target_team_id:
-                logger.error("No target team found")
-                return
-            
-            target_team = self.state.teams[target_team_id]
-            
-            # Execute attack
-            result, sunk_ship = target_team.grid.attack(position)
-            
-            # Record in memory system
-            all_agents = []
-            for team in self.state.teams.values():
-                all_agents.extend(team.members)
+            except Exception as e:
+                logger.error(f"Voting failed for {member}: {e}")
 
-            self.memory_manager.record_coordinate_attack(
-                coordinate=coordinate,
-                attacker=player_id,
-                target_team=target_team.name,
-                result=result,
-                sunk_ship=sunk_ship.name if sunk_ship else None,
-                round_number=self.state.round_number,
-                inform_agents=all_agents
-            )
-            
-            # Record coordinate and result
-            if player_id not in self.coordinate_history:
-                self.coordinate_history[player_id] = []
-            self.coordinate_history[player_id].append(coordinate)
-            
-            # Store attack result for later reference
-            attack_record = {
-                'player': player_id,
-                'coordinate': coordinate,
-                'result': result,
-                'sunk_ship': sunk_ship.name if sunk_ship else None,
-                'round': self.state.round_number
-            }
-            
-            # Add to game log with attack result
-            await self._log_game_event("ATTACK_RESULT", 
-                                      f"{player_id} -> {coordinate}: {result}" + (f" ({sunk_ship.name})" if sunk_ship else ""),
-                                      attack_record)
-            
-            # Clean attack result logging
-            if result == "SUNK" and sunk_ship:
-                logger.info(f"[BATTLE] [R{self.state.round_number}] {player_id} -> {coordinate}: {result} ({sunk_ship.name})")
-            else:
-                logger.info(f"[BATTLE] [R{self.state.round_number}] {player_id} -> {coordinate}: {result}")
-            
-            # Announce result using programmatic game master
-            await self.game_master.announce_attack_result(player_id, coordinate, result, sunk_ship)
-            
-            turn_intel = (
-                f"TURN INTEL: {player_id} attacked {coordinate} → {result}" + (f" (sunk {sunk_ship.name})" if sunk_ship else "")
-            )
+        return votes
 
-            # Determine which agents should get this memory (player + its assistant)
-            agents_to_update = [player_id]
-            assignment = self.config['agent_assignments'].get(player_id, {})
-            assistant_id = assignment.get('assistant_id')
-            if assignment.get('has_assistant') and assistant_id:
-                agents_to_update.append(assistant_id)
 
-            # Inject into their battlefield memory
-            await self._inject_battlefield_intel(agents_to_update, turn_intel)
-            
-        except Exception as e:
-            logger.error(f"Attack failed {coordinate} by {player_id}: {e}")
-    
-    def export_game_memories(self):
-        """Export game memories"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"battleship_memories_{timestamp}.json"
-        
-        memory_export = self.memory_manager.export_all_memories()
-        
-        output_dir = Path("output")
-        output_dir.mkdir(exist_ok=True)
-        
-        with open(output_dir / filename, 'w') as f:
-            json.dump(memory_export, f, indent=2)
-        
-        print(f"Memories exported to: output/{filename}")
-        return filename
-    
-    def _get_attack_result_for_coordinate(self, coordinate: str, player_id: str) -> str:
-        """Get the attack result for a specific coordinate from game log"""
-        # Look through recent game log for this coordinate's attack result
-        for event in reversed(self.state.game_log):
-            if event.get('event_type') == 'ATTACK_RESULT':
-                metadata = event.get('metadata', {})
-                if (metadata.get('player') == player_id and 
-                    metadata.get('coordinate') == coordinate):
-                    result = metadata.get('result', 'MISS')
-                    sunk_ship = metadata.get('sunk_ship')
-                    
-                    if result == "SUNK" and sunk_ship:
-                        return f'HIT & SUNK ({sunk_ship})'
-                    elif result == "HIT":
-                        return 'HIT'
-                    elif result == "MISS":
-                        return 'MISS'
-                    else:
-                        return result
-        
-        # Fallback
-        return 'MISS'
 
-    async def _share_round_results(self, team_id: str):
-        """Share round results by directly updating agent and assistant memory"""
-        team = self.state.teams[team_id]
-        
-        # Collect round results with hit/miss information
-        round_results = []
-        for member in team.members:
-            if member in self.coordinate_history:
-                recent_coords = self.coordinate_history[member][-1:] if self.coordinate_history[member] else []
-                for coord in recent_coords:
-                    attack_result = self._get_attack_result_for_coordinate(coord, member)
-                    round_results.append(f"{coord}: {attack_result}")
-        
-        all_attempted_coords = self._get_all_attempted_coordinates()
-        
-        if round_results:
-            # Create comprehensive battlefield intel summary
-            intel_summary = f"""BATTLEFIELD INTEL UPDATE - Round {self.state.round_number}:
-{team.name} attacks: {', '.join(round_results)}
-Global battlefield status: {len(all_attempted_coords)} coordinates attempted by both teams
-Remaining valid targets: {100 - len(all_attempted_coords)}
-Strategic note: Use this intel for next round planning and coordinate selection."""
-            
-            # Get all agents to update: players + their assistants
-            agents_to_update = []
-            
-            # Add all team members (players)
-            agents_to_update.extend(team.members)
-            
-            # Add all assistants for this team's members
-            for member in team.members:
-                agent_assignment = self.config.get('agent_assignments', {}).get(member, {})
-                assistant_id = agent_assignment.get('assistant_id')
-                if assistant_id and agent_assignment.get('has_assistant', False):
-                    agents_to_update.append(assistant_id)
-                    logger.info(f"[INTEL] Including assistant {assistant_id} for player {member}")
-            
-            # Directly inject intel into all agents (no conversations)
-            await self._inject_battlefield_intel(agents_to_update, intel_summary.strip())
-            
-            # Also share intel with opponent team for realistic battlefield awareness
-            opponent_team_id = None
-            for tid, t in self.state.teams.items():
-                if tid != team_id:
-                    opponent_team_id = tid
-                    break
-            
-            if opponent_team_id:
-                opponent_team = self.state.teams[opponent_team_id]
-                opponent_agents = []
-                
-                # Add opponent team members
-                opponent_agents.extend(opponent_team.members)
-                
-                # Add opponent assistants  
-                for member in opponent_team.members:
-                    agent_assignment = self.config.get('agent_assignments', {}).get(member, {})
-                    assistant_id = agent_assignment.get('assistant_id')
-                    if assistant_id and agent_assignment.get('has_assistant', False):
-                        opponent_agents.append(assistant_id)
-                
-                opponent_intel = f"""ENEMY ACTIVITY INTEL - Round {self.state.round_number}:
-Enemy team ({team.name}) attempted: {', '.join([r.split(':')[0] for r in round_results])}
-Global battlefield status: {len(all_attempted_coords)} coordinates attempted by both teams
-Strategic note: Use this intel to avoid already-attempted coordinates."""
-                
-                await self._inject_battlefield_intel(opponent_agents, opponent_intel.strip())
-            
-            total_updated = len(agents_to_update) + (len(opponent_agents) if opponent_team_id else 0)
-            logger.info(f"[INTEL] Updated battlefield memory for {total_updated} total agents (players + assistants)")
 
-    async def _inject_battlefield_intel(self, agent_ids: List[str], intel_summary: str):
-        """Safely inject battlefield intel into agent memory without corrupting AutoGen internals"""
-        successful_injections = 0
+    async def _step3_plan_selection(self, team_id: str, members: List[str], 
+                                  proposals: List[TeamProposal], votes: Dict[str, str]) -> Optional[TeamProposal]:
+        """Step 3: Plan selection with results broadcast to everyone"""
+        await self._log_event("ALPHA_STEP3", "Plan Selection - Real Group Chat")
         
-        for agent_id in agent_ids:
-            if agent_id in self.network.agents:
-                try:
-                    agent = self.network.agents[agent_id]
-                    
-                    # Initialize battlefield memory as a regular list if it doesn't exist
-                    if not hasattr(agent, 'battlefield_memory'):
-                        agent.battlefield_memory = []
-                    elif not isinstance(agent.battlefield_memory, list):
-                        # Convert any other type to list for safety
-                        agent.battlefield_memory = []
-                    
-                    # Add new intel to agent's memory
-                    intel_entry = {
-                        'type': 'battlefield_intel',
-                        'content': intel_summary,
-                        'round': self.state.round_number,
-                        'timestamp': datetime.now().isoformat(),
-                        'agent_id': agent_id
-                    }
-                    
-                    agent.battlefield_memory.append(intel_entry)
-                    
-                    # Keep only last 10 intel updates to prevent memory bloat
-                    agent.battlefield_memory = agent.battlefield_memory[-10:]
-                    
-                    # Store latest intel in easily accessible attribute
-                    agent.latest_battlefield_intel = intel_summary
-                    
-                    # Store intel summary for quick access during coordinate selection
-                    agent.current_round_intel = intel_summary
-                    
-                    successful_injections += 1
-                    logger.debug(f"[INTEL] Successfully updated memory for {agent_id}")
-                    
-                except Exception as e:
-                    logger.error(f"Failed to inject intel into {agent_id}: {e}")
-                    # Try a simpler approach as fallback
-                    try:
-                        agent = self.network.agents[agent_id]
-                        agent.latest_battlefield_intel = intel_summary
-                        successful_injections += 1
-                        logger.info(f"[INTEL] Used fallback intel injection for {agent_id}")
-                    except Exception as fallback_error:
-                        logger.error(f"Even fallback injection failed for {agent_id}: {fallback_error}")
-            else:
-                logger.warning(f"Agent {agent_id} not found in network")
+        if not proposals or not votes:
+            logger.warning("No proposals or votes for plan selection")
+            return None
         
-        logger.info(f"[INTEL] Successfully injected intel into {successful_injections}/{len(agent_ids)} agents")
-    
-    def _build_game_context_for_player(self, player_id: str) -> str:
-        """Build current game context for a player - ENHANCED with own ship positions"""
-        team_id = self._get_player_team_id(player_id)
+        # Count votes for each proposal
+        vote_counts = {}
+        for proposer in [p.proposer_id for p in proposals]:
+            vote_counts[proposer] = 0
         
-        if not team_id:
-            return "Game context unavailable"
+        for voter, voted_for in votes.items():
+            if voted_for in vote_counts:
+                vote_counts[voted_for] += 1
         
-        # Get player's team info
-        team = self.state.teams[team_id]
+        # Find winner(s)
+        max_votes = max(vote_counts.values()) if vote_counts else 0
+        winners = [proposer for proposer, count in vote_counts.items() if count == max_votes]
         
-        # Get opponent team info
-        opponent_team = None
-        for tid, t in self.state.teams.items():
-            if tid != team_id:
-                opponent_team = t
+        winning_proposer = None
+        selection_message = ""
+        
+        if len(winners) == 1:
+            # Clear winner
+            winning_proposer = winners[0]
+            selection_message = f"🏆 WINNER: {winning_proposer}'s plan wins with {max_votes} votes!"
+            await self._log_event("PLAN_SELECTED", 
+                                f"Majority winner: {winning_proposer} with {max_votes} votes")
+        elif len(winners) > 1:
+            # Tie-breaking: random selection
+            winning_proposer = random.choice(winners)
+            selection_message = f"🎲 TIE BROKEN: {winning_proposer} selected randomly from {winners}"
+            await self._log_event("TIE_BROKEN", 
+                                f"Tie broken randomly: {winning_proposer} selected from {winners}")
+        
+        # Find and return winning proposal
+        winning_proposal = None
+        for proposal in proposals:
+            if proposal.proposer_id == winning_proposer:
+                winning_proposal = proposal
                 break
         
-        # Get own ship positions
-        own_ship_positions = self._get_team_ship_positions(team_id)
+        # BROADCAST final selection to ALL team members (real group chat!)
+        if winning_proposal:
+            final_plan = f"{selection_message}\n\nFINAL TEAM ACTIONS:\n"
+            for player, action in winning_proposal.team_actions.items():
+                action_str = f"{action.action_type.value} {action.target}" if action else "NO ACTION"
+                final_plan += f"• {player}: {action_str}\n"
+            
+            final_plan += "\n📢 INSTRUCTION: This is an informational broadcast.\n"
+            final_plan += "Do NOT propose new actions or discuss here.\n"
+            final_plan += "Reply with EXACTLY one word: ACK"
+            
+            logger.info(f"📢 Broadcasting final plan selection to Alpha team...")
+            
+            # LOG THE WINNING PLAN FOR VISIBILITY
+            if winning_proposal:
+                logger.info(f"🏆 EXECUTING PLAN: {winning_proposer} won with {max_votes} votes")
+                plan_actions = []
+                for player, action in winning_proposal.team_actions.items():
+                    if action:
+                        plan_actions.append(f"{player}: {action.action_type.value} {action.target}")
+                    else:
+                        plan_actions.append(f"{player}: NO ACTION")
+                logger.info(f"📋 PLAN DETAILS: {' | '.join(plan_actions)}")
+                logger.info(f"💭 REASONING: {winning_proposal.reasoning}")
+            
+            for member in members:
+                await self.network.send_message(
+                    "game_master", member,
+                    f"GROUP CHAT UPDATE:\n{final_plan}",
+                    max_turns=1, conversation_type="plan_selection"
+                )
+            
+            # Award coordination bonus to effective proposer
+            self.state.player_scores[winning_proposer].coordination_bonus += 5
         
-        context = f"""Round: {self.state.round_number}
-    Your Team: {team.name}
-    Opponent: {opponent_team.name if opponent_team else 'Unknown'}
+        return winning_proposal
 
-    Your Previous Coordinates: {', '.join(self.coordinate_history.get(player_id, []))}
-    Your Team's Ship Locations: {', '.join(own_ship_positions)}
+    # =============================================================================
+    # Beta Team: Individual Decisions (Parallel)
+    # =============================================================================
 
-    Grid: {self.grid_size[0]}x{self.grid_size[1]} (A1 to {chr(ord('A') + self.grid_size[0] - 1)}{self.grid_size[1]})"""
+    async def _beta_individual_phase(self) -> Dict[str, Optional[PlayerAction]]:
+        """Beta team individual decision making (parallel processing)"""
+        beta_team_id = None
+        beta_actions = {}
+        
+        # Find Beta team (no coordination)
+        for team_id, team in self.state.teams.items():
+            if not team.coordination_enabled:
+                beta_team_id = team_id
+                break
+        
+        if not beta_team_id:
+            return {}
+        
+        team = self.state.teams[beta_team_id]
+        active_members = [m for m in team.members if m not in self.state.eliminated_players]
+        
+        if not active_members:
+            return {}
+        
+        await self._log_event("BETA_INDIVIDUAL_START", 
+                             f"{team.name} individual decisions - Round {self.state.round_number}")
+        
+        # All Beta agents make decisions in parallel
+        decision_tasks = []
+        for member in active_members:
+            context = self._get_context_for_player(member)
+            prompt = (
+                f"{context}\n\n"
+                "INDIVIDUAL DECISION (NO TEAM COORDINATION)\n"
+                "REQUIRED OUTPUT FORMAT (ONE LINE ONLY):\n"
+                "  ACTION: BOMB <A1-J10>\n"
+                "    -or-\n"
+                "  ACTION: MOVE <UP|DOWN|LEFT|RIGHT|ROTATE>\n"
+                "Rules:\n"
+                "  • Reply with EXACTLY ONE line starting with 'ACTION:'\n"
+                "  • No extra prose. No multiple actions. No voting keywords here.\n"
+                "  • If uncertain, prefer ACTION: BOMB on a previously untested coordinate.\n"
+            )
+
+            
+            task = self.network.send_message(
+                "game_master", member, prompt,
+                max_turns=1, conversation_type="individual_decision"
+            )
+            decision_tasks.append((member, task))
+        
+        # Collect all decisions
+        for member, task in decision_tasks:
+            try:
+                result = await task
+                action = self._parse_action_from_conversation(result, member)
+                beta_actions[member] = action
+                
+                if action:
+                    logger.info(f"[BETA_INDIVIDUAL] {member}: {action.action_type.value} {action.target}")
+                
+            except Exception as e:
+                logger.error(f"Individual decision failed for {member}: {e}")
+                beta_actions[member] = None
+        
+        await self._log_event("BETA_INDIVIDUAL_COMPLETE", 
+                             f"{team.name} individual decisions complete - {len(beta_actions)} actions")
+        
+        return beta_actions
+
+    # =============================================================================
+    # NEW: Simultaneous Execution System
+    # =============================================================================
+
+    async def _execute_simultaneous_actions(self, alpha_actions: Dict[str, Optional[PlayerAction]], 
+                                      beta_actions: Dict[str, Optional[PlayerAction]]):
+        """Execute all actions from both teams with TRUE simultaneous processing"""
+        await self._log_event("SIMULTANEOUS_EXECUTION_START", "Processing actions with true simultaneity")
+        
+        # Combine all actions
+        all_actions = {}
+        all_actions.update(alpha_actions)
+        all_actions.update(beta_actions)
+        
+        # SNAPSHOT: Capture current state before any processing
+        pre_action_grids = {}
+        pre_action_ships = {}
+        for team_id, team in self.state.teams.items():
+            pre_action_grids[team_id] = [row[:] for row in team.grid.grid]  # Deep copy
+            pre_action_ships[team_id] = {}
+            for ship in team.grid.ships:
+                pre_action_ships[team_id][ship.owner_id] = {
+                    'positions': ship.positions[:],
+                    'hits': ship.hits,
+                    'orientation': ship.orientation,
+                    'is_sunk': ship.is_sunk
+                }
+        
+        # Group actions by type
+        bomb_actions = []
+        move_actions = []
+        
+        for player_id, action in all_actions.items():
+            if action and player_id not in self.state.eliminated_players:
+                if action.action_type == ActionType.BOMB:
+                    bomb_actions.append((player_id, action))
+                elif action.action_type == ActionType.MOVE:
+                    move_actions.append((player_id, action))
+        
+        # Process all actions against the snapshot
+        await self._process_bomb_actions_simultaneously(bomb_actions, pre_action_grids)
+        await self._process_move_actions_simultaneously(move_actions, pre_action_ships)
+        
+        await self._log_event("SIMULTANEOUS_EXECUTION_COMPLETE", 
+                            f"Processed {len(bomb_actions)} bombs, {len(move_actions)} moves simultaneously")
+    
+    async def _process_bomb_actions_simultaneously(self, bomb_actions: List[Tuple[str, PlayerAction]], pre_action_grids: Dict[str, List[List]]):
+        """Process all bomb actions against snapshot grids (allows ghost shots)"""
+        if not bomb_actions:
+            return
+        
+        await self._log_event("BOMB_PHASE", f"Processing {len(bomb_actions)} bombs against pre-action positions")
+        
+        for player_id, action in bomb_actions:
+            try:
+                target_pos = self.coordinate_to_position(action.target)
+                team_id = self._get_player_team_id(player_id)
+                enemy_team_id = self._get_enemy_team_id(team_id)
+                
+                if enemy_team_id:
+                    # Use PRE-ACTION grid state for hit detection
+                    snapshot_grid = pre_action_grids[enemy_team_id]
+                    r, c = target_pos
+                    
+                    # Determine result based on snapshot
+                    if not (0 <= r < len(snapshot_grid) and 0 <= c < len(snapshot_grid[0])):
+                        result = "INVALID"
+                        sunk_ship = None
+                    elif snapshot_grid[r][c] in [CellState.HIT, CellState.MISS]:
+                        result = "ALREADY_ATTACKED" 
+                        sunk_ship = None
+                    elif snapshot_grid[r][c] == CellState.SHIP:
+                        # Apply hit to CURRENT grid
+                        current_grid = self.state.teams[enemy_team_id].grid
+                        current_grid.grid[r][c] = CellState.HIT
+                        
+                        # Find and update ship
+                        sunk_ship = None
+                        for ship in current_grid.ships:
+                            if (r, c) in ship.positions:
+                                ship.hits += 1
+                                if ship.is_sunk:
+                                    result = "SUNK"
+                                    sunk_ship = ship
+                                    # Handle elimination
+                                    if ship.owner_id not in self.state.eliminated_players:
+                                        self.state.eliminated_players.append(ship.owner_id)
+                                        self.state.player_scores[ship.owner_id].ship_survival = 0
+                                else:
+                                    result = "HIT"
+                                break
+                    else:
+                        result = "MISS"
+                        sunk_ship = None
+                        # Apply miss to current grid
+                        self.state.teams[enemy_team_id].grid.grid[r][c] = CellState.MISS
+                    
+                    # Record attack in memory
+                    self.memory_manager.record_coordinate_attack(
+                        coordinate=action.target,
+                        attacker=player_id,
+                        target_team=enemy_team_id,
+                        result=result,
+                        sunk_ship=sunk_ship.name if sunk_ship else None,
+                        ship_owner=sunk_ship.owner_id if sunk_ship else None,
+                        player_eliminated=bool(sunk_ship),
+                        round_number=self.state.round_number,
+                        inform_agents=self.state.teams[team_id].members
+                    )
+                    
+                    await self._log_event("BOMB_RESULT", 
+                                        f"{player_id} → {action.target}: {result}" + 
+                                        (f" (sunk {sunk_ship.name})" if sunk_ship else ""))
+                    
+            except Exception as e:
+                logger.error(f"Bomb action failed for {player_id}: {e}")
+
+    async def _process_move_actions_simultaneously(self, move_actions: List[Tuple[str, PlayerAction]], pre_action_ships: Dict[str, Dict[str, Dict]]):
+        """Process all move actions from snapshot positions"""
+        if not move_actions:
+            return
+        
+        await self._log_event("MOVE_PHASE", f"Processing {len(move_actions)} moves from pre-action positions")
+        
+        for player_id, action in move_actions:
+            try:
+                team_id = self._get_player_team_id(player_id)
+                if not team_id:
+                    continue
+                
+                team = self.state.teams[team_id]
+                player_ship = team.grid.get_ship_by_owner(player_id)
+                
+                if not player_ship:
+                    continue
+                
+                # Use PRE-ACTION position for move calculation
+                if player_id in pre_action_ships[team_id]:
+                    old_positions = pre_action_ships[team_id][player_id]['positions']
+                    old_pos = self.position_to_coordinate(old_positions[0]) if old_positions else "Unknown"
+                    
+                    # Calculate move from pre-action position
+                    success = team.grid.move_ship(player_ship, action.target)
+                    new_pos = self.position_to_coordinate(player_ship.positions[0]) if player_ship.positions else old_pos
+                    
+                    # Record movement
+                    self.memory_manager.record_ship_movement(
+                        player_id=player_id,
+                        ship_name=player_ship.name,
+                        movement_type=action.target,
+                        from_position=old_pos if success else None,
+                        to_position=new_pos if success else None,
+                        reason=action.reason,
+                        round_number=self.state.round_number,
+                        inform_agents=team.members
+                    )
+                    
+                    if success:
+                        await self._log_event("MOVE_SUCCESS", 
+                                            f"{player_id} moved {player_ship.name} {action.target}: {old_pos} → {new_pos}")
+                    else:
+                        await self._log_event("MOVE_BLOCKED", 
+                                            f"{player_id} move {action.target} blocked")
+                
+            except Exception as e:
+                logger.error(f"Move action failed for {player_id}: {e}")
+
+    def _apply_cross_team_deduplication(self, all_actions: Dict[str, Optional[PlayerAction]]) -> Dict[str, Optional[PlayerAction]]:
+        """No deduplication - let agents coordinate naturally"""
+        return all_actions
+
+    def _find_alternative_target(self, team_id: str) -> Optional[str]:
+        """Find an alternative bombing target"""
+        enemy_team_id = self._get_enemy_team_id(team_id)
+        if not enemy_team_id:
+            return None
+        
+        enemy_grid = self.state.teams[enemy_team_id].grid
+        
+        # Try to find an untargeted coordinate
+        for row in range(self.grid_size[0]):
+            for col in range(self.grid_size[1]):
+                if enemy_grid.grid[row][col] == CellState.EMPTY:
+                    return self.position_to_coordinate((row, col))
+        
+        return None
+
+    # =============================================================================
+    # Ship Placement (unchanged)
+    # =============================================================================
+
+    def _assign_ships_to_players(self, team: Team, ship_set: List[Dict[str, Any]]) -> List[Ship]:
+        """Assign ships to team members"""
+        ship_pool = []
+        
+        # Create ship pool from configuration
+        for ship_config in ship_set:
+            quantity = int(ship_config["quantity"])
+            for i in range(quantity):
+                name = ship_config["name"]
+                if quantity > 1:
+                    name += f" {i + 1}"
+                
+                ship_pool.append(Ship(
+                    name=name,
+                    size=int(ship_config["size"]),
+                    owner_id=""  # Will be assigned below
+                ))
+        
+        # Shuffle and assign to players
+        random.shuffle(ship_pool)
+        assigned_ships = []
+        
+        for i, player_id in enumerate(team.members):
+            if i < len(ship_pool):
+                ship = ship_pool[i]
+                ship.owner_id = player_id
+                assigned_ships.append(ship)
+                logger.info(f"Assigned {ship.name} (size {ship.size}) to {player_id}")
+        
+        return assigned_ships
+
+    def _auto_place_ships(self, team: Team, ships: List[Ship]):
+        """Automatically place ships on team grid"""
+        for ship in ships:
+            placed = False
+            attempts = 0
+            max_attempts = 100
+            
+            while not placed and attempts < max_attempts:
+                row = random.randint(0, self.grid_size[0] - 1)
+                col = random.randint(0, self.grid_size[1] - 1)
+                orientation = random.choice(["horizontal", "vertical"])
+                
+                if team.grid.place_ship(ship, (row, col), orientation):
+                    placed = True
+                    coord = self.position_to_coordinate((row, col))
+                    logger.info(f"Placed {ship.owner_id}'s {ship.name} at {coord} ({orientation})")
+                
+                attempts += 1
+            
+            if not placed:
+                logger.error(f"Failed to place {ship.name} for {ship.owner_id}")
+
+    # =============================================================================
+    # Parsing and Utility Functions
+    # =============================================================================
+
+    def _parse_team_proposal(self, proposer_id: str, content: str, team_members: List[str]) -> Optional[TeamProposal]:
+        """Parse team proposal from agent response - ROBUST VERSION"""
+        if not content:
+            return None
+        
+        # Handle different dash characters and Unicode variants
+        dash_pattern = r'[-–—\u2013\u2014\u002D]'  # Regular hyphen, en-dash, em-dash, Unicode variants
+        
+        logger.debug(f"Parsing proposal from {proposer_id}: {content[:200]}...")
+        
+        # Look for PROPOSAL: format with flexible dash handling
+        proposal_match = re.search(rf'PROPOSAL:\s*(.*?)\s*{dash_pattern}\s*(.*)', content, re.IGNORECASE | re.DOTALL)
+        if not proposal_match:
+            # Fallback: try without explicit dash separator (look for reasoning keywords)
+            proposal_match = re.search(r'PROPOSAL:\s*(.*)', content, re.IGNORECASE | re.DOTALL)
+            if proposal_match:
+                full_text = proposal_match.group(1).strip()
+                # Split on reasoning keywords that often follow actions
+                reasoning_splits = [
+                    r'\s+(?:to|for|while|because|since|as|maximizing|opening|probing)\s+',
+                    r'\s*;\s*',  # semicolon separator
+                    r'\s*\.\s*',  # period separator
+                ]
+                
+                actions_text = full_text
+                reasoning = "Strategic coordination"
+                
+                for split_pattern in reasoning_splits:
+                    parts = re.split(split_pattern, full_text, maxsplit=1, flags=re.IGNORECASE)
+                    if len(parts) == 2 and len(parts[0]) < len(full_text) * 0.8:  # Don't split too late
+                        actions_text = parts[0].strip()
+                        reasoning = parts[1].strip()
+                        logger.debug(f"Split on pattern '{split_pattern}': actions='{actions_text}', reasoning='{reasoning[:50]}...'")
+                        break
+            else:
+                logger.warning(f"No PROPOSAL: format found in: {content[:100]}")
+                return None
+        else:
+            actions_text = proposal_match.group(1).strip()
+            reasoning = proposal_match.group(2).strip() if proposal_match.lastindex >= 2 else "No reasoning provided"
+            logger.debug(f"Found dash-separated proposal: actions='{actions_text}', reasoning='{reasoning[:50]}...'")
+        
+        # Parse individual actions
+        team_actions = {}
+        
+        # Enhanced pattern with word boundaries to prevent partial matches
+        action_pattern = r'\b(player_[ab]\d+|[ab]\d+|alpha\d+|beta\d+)\s+(BOMB|MOVE)\s+([A-J](?:10|[1-9])|UP|DOWN|LEFT|RIGHT|ROTATE)\b'
+        matches = re.findall(action_pattern, actions_text, re.IGNORECASE)
+        
+        logger.debug(f"Found {len(matches)} action matches: {matches}")
+        
+        # Map variations to actual player names
+        def normalize_player_name(name_variant: str) -> Optional[str]:
+            name_lower = name_variant.lower()
+            for member in team_members:
+                member_lower = member.lower()
+                if name_lower == member_lower:
+                    return member
+                # Handle a1 -> player_a1, etc.
+                member_short = re.sub(r'player_', '', member_lower)
+                if name_lower == member_short:
+                    return member
+            return None
+        
+        for player_name, action_type, target in matches:
+            normalized_name = normalize_player_name(player_name)
+            if normalized_name:
+                action = PlayerAction(
+                    player_id=normalized_name,
+                    action_type=ActionType.BOMB if action_type.upper() == "BOMB" else ActionType.MOVE,
+                    target=target.upper()
+                )
+                team_actions[normalized_name] = action
+                logger.debug(f"Parsed action: {normalized_name} -> {action_type} {target}")
+            else:
+                logger.warning(f"Could not normalize player name: {player_name}")
+        
+        # Ensure all team members have actions
+        for member in team_members:
+            if member not in team_actions:
+                team_actions[member] = None
+        
+        if not any(team_actions.values()):
+            logger.warning(f"No valid actions parsed from: '{actions_text}' (original: {content[:200]})")
+            return None
+        
+        logger.info(f"✅ Successfully parsed proposal from {proposer_id}: {len([a for a in team_actions.values() if a])} actions")
+        
+        return TeamProposal(
+            proposer_id=proposer_id,
+            team_actions=team_actions,
+            reasoning=reasoning
+        )
+
+    def _parse_vote(self, content: str, proposer_names: List[str]) -> Optional[str]:
+        if not content:
+            return None
+        text = content.strip()
+
+        # Build alias map (player_a1 -> {player_a1, a1, a-1, alpha1, alpha-1})
+        aliases = {}
+        for p in proposer_names:
+            m = re.search(r'player_(a|b)(\d+)', p, re.I)
+            if not m: 
+                continue
+            team, num = m.group(1).lower(), m.group(2)
+            for alias in [
+                p,                               # player_a1
+                f"{team}{num}",                  # a1 / b1
+                f"{team}-{num}",                 # a-1 / b-1
+                ("alpha" if team=="a" else "beta") + num,      # alpha1 / beta1
+                ("alpha" if team=="a" else "beta") + "-" + num # alpha-1 / beta-1
+            ]:
+                aliases[alias.lower()] = p
+
+        upper = text.upper()
+
+        # 1) Canonical format: VOTE: <name>
+        m = re.search(r'^\s*VOTE\s*[:\-]\s*([A-Z0-9\-_]+)', text, re.I)
+        if m:
+            key = m.group(1).lower()
+            if key in aliases:
+                return aliases[key]
+            # direct match against proposer_names
+            for p in proposer_names:
+                if p.lower() == key:
+                    return p
+
+        # 2) Natural language: "I vote for X" / "My vote is X" / "Vote for X"
+        m = re.search(r'\b(?:i\s+vote\s+for|my\s+vote\s+is|vote\s+for)\s+([A-Z0-9\-_]+)\b', text, re.I)
+        if m:
+            key = m.group(1).lower()
+            if key in aliases:
+                return aliases[key]
+            for p in proposer_names:
+                if p.lower() == key:
+                    return p
+
+        # 3) Bare identifier on its own line
+        if len(text.split()) == 1:
+            key = text.lower()
+            if key in aliases:
+                return aliases[key]
+            for p in proposer_names:
+                if p.lower() == key:
+                    return p
+
+        # 4) Last resort: any proposer string present anywhere
+        for p in proposer_names:
+            if p.lower() in text.lower():
+                return p
+
+        return None
+
+
+    def _extract_vote_reasoning(self, vote_content: str) -> str:
+        """Extract reasoning from vote content"""
+        if not vote_content:
+            return "No reasoning provided"
+        
+        # Look for reasoning after VOTE: format
+        vote_match = re.search(r'VOTE:\s*\w+.*?-\s*(.*)', vote_content, re.IGNORECASE | re.DOTALL)
+        if vote_match:
+            reasoning = vote_match.group(1).strip()
+            # Return full reasoning, no truncation
+            return reasoning if reasoning else "No reasoning provided"
+        
+        # Fallback: look for "reasoning" keyword
+        reasoning_match = re.search(r'reasoning[:\s]+(.*)', vote_content, re.IGNORECASE | re.DOTALL)
+        if reasoning_match:
+            reasoning = reasoning_match.group(1).strip()
+            return reasoning if reasoning else "No reasoning provided"
+        
+        return "No reasoning provided"
+
+    def _get_team_context(self, team_id: str, members: List[str]) -> str:
+        """Get team context for all members"""
+        team = self.state.teams[team_id]
+        enemy_team_id = self._get_enemy_team_id(team_id)
+        
+        context = f"🎮 ALPHA TEAM COORDINATION - Round {self.state.round_number}\n"
+        context += f"Team: {team.name}\n"
+        context += f"Enemy Team: {self.state.teams[enemy_team_id].name if enemy_team_id else 'Unknown'}\n\n"
+        
+        context += "TEAM SHIP STATUS:\n"
+        for member in members:
+            player_ship = team.grid.get_ship_by_owner(member)
+            if player_ship:
+                if player_ship.is_sunk:
+                    context += f"• {member}: {player_ship.name} (SUNK - eliminated)\n"
+                elif player_ship.hits > 0:
+                    context += f"• {member}: {player_ship.name} (size {player_ship.size}, {player_ship.hits} hits - DAMAGED!)\n"
+                    if player_ship.positions:
+                        start_pos = self.position_to_coordinate(player_ship.positions[0])
+                        context += f"  Location: {start_pos} ({player_ship.orientation})\n"
+                        valid_moves = team.grid.get_valid_moves_for_ship(player_ship)
+                        context += f"  Valid moves: {', '.join(valid_moves) if valid_moves else 'None'}\n"
+                else:
+                    context += f"• {member}: {player_ship.name} (size {player_ship.size}, undamaged)\n"
+                    if player_ship.positions:
+                        start_pos = self.position_to_coordinate(player_ship.positions[0])
+                        context += f"  Location: {start_pos} ({player_ship.orientation})\n"
+                        valid_moves = team.grid.get_valid_moves_for_ship(player_ship)
+                        context += f"  Valid moves: {', '.join(valid_moves) if valid_moves else 'None'}\n"
+        
+        context += f"\nOBJECTIVE: Coordinate as a team to attack enemy ships and win!\n"
+        context += f"Actions: BOMB [coordinate] or MOVE [direction]\n"
+        context += f"Enemy grid coordinates: A1 to J10\n"
+        
+        # Get battlefield memory with proper error handling
+        try:
+            memory_summary = self.memory_manager.generate_dynamic_battlefield_summary()
+            # logger.info(f"📊 Memory summary generated: {memory_summary[:100] if memory_summary else 'None'}...")
+            if memory_summary and "No battlefield activity" not in memory_summary:
+                # Add explicit coordinate list for clarity
+                attacked_coords = self._get_all_attacked_coordinates()
+                coord_list = f"ATTACKED COORDINATES (AVOID THESE): {', '.join(sorted(attacked_coords))}" if attacked_coords else "No coordinates attacked yet"
+                
+                context += f"\nPREVIOUS ATTACKS:\n{coord_list}\n\n{memory_summary}\n"
+                # logger.info(f"✅ Battlefield intel added: {len(attacked_coords)} coordinates")
+            else:
+                context += f"\nPREVIOUS ATTACKS: No coordinates attacked yet\n"
+                logger.warning(f"⚠️ No battlefield intel available")
+        except Exception as e:
+            logger.error(f"❌ Memory system failed: {e}")
         
         return context
-    
-    def _build_memory_context(self, player_id: str) -> str:
-        """Use the intel already injected into agent memory"""
-        if player_id in self.network.agents:
-            agent = self.network.agents[player_id]
-            
-            # Use the latest battlefield intel you're already storing
-            if hasattr(agent, 'latest_battlefield_intel'):
-                return f"BATTLEFIELD MEMORY:\n{agent.latest_battlefield_intel}"
-            
-            # Fallback to battlefield memory list
-            if hasattr(agent, 'battlefield_memory') and agent.battlefield_memory:
-                latest_intel = agent.battlefield_memory[-1]['content']
-                return f"BATTLEFIELD MEMORY:\n{latest_intel}"
+
+    def _get_all_attacked_coordinates(self) -> List[str]:
+        """Get list of all coordinates attacked in previous rounds"""
+        attacked = set()
         
-        return "BATTLEFIELD MEMORY: No intel available"
+        # Check all team grids for attacked coordinates
+        for team in self.state.teams.values():
+            for row_idx, row in enumerate(team.grid.grid):
+                for col_idx, cell in enumerate(row):
+                    if cell in [CellState.HIT, CellState.MISS]:
+                        coord = self.position_to_coordinate((row_idx, col_idx))
+                        attacked.add(coord)
+        
+        return list(attacked)
     
-    def _check_victory_condition(self) -> bool:
+    def _get_context_for_player(self, player_id: str) -> str:
+        """Generate context information for a player"""
+        team_id = self._get_player_team_id(player_id)
+        if not team_id:
+            return "Context unavailable"
+        
+        team = self.state.teams[team_id]
+        player_ship = team.grid.get_ship_by_owner(player_id)
+        enemy_team_id = self._get_enemy_team_id(team_id)
+        
+        # Basic context
+        context = f"[BATTLESHIP GAME - Round {self.state.round_number}]\n"
+        context += f"Team: {team.name}\n"
+        context += f"Enemy Team: {self.state.teams[enemy_team_id].name if enemy_team_id else 'Unknown'}\n\n"
+        
+        # Ship status
+        if player_ship:
+            if player_ship.is_sunk:
+                context += f"Your ship: {player_ship.name} (SUNK - you are eliminated)\n"
+            elif player_ship.hits > 0:
+                context += f"Your ship: {player_ship.name} (size {player_ship.size}, took {player_ship.hits} hits - DAMAGED!)\n"
+            else:
+                context += f"Your ship: {player_ship.name} (size {player_ship.size}, undamaged)\n"
+            
+            # Ship position
+            if player_ship.positions:
+                start_pos = self.position_to_coordinate(player_ship.positions[0])
+                context += f"Your ship location: {start_pos} ({player_ship.orientation})\n"
+        else:
+            context += "Your ship: None assigned\n"
+        
+        # Valid moves
+        if player_ship and not player_ship.is_sunk:
+            valid_moves = team.grid.get_valid_moves_for_ship(player_ship)
+            if valid_moves:
+                context += f"Valid moves: {', '.join(valid_moves)}\n"
+        
+        # Game objective
+        context += f"\nOBJECTIVE: Attack enemy ships with BOMB [coordinate] or move your ship with MOVE [direction]\n"
+        context += f"Enemy grid coordinates: A1 to J10\n"
+        context += f"Valid actions: BOMB [any coordinate A1-J10], MOVE [UP/DOWN/LEFT/RIGHT/ROTATE]\n"
+        
+        
+        # Get battlefield memory with proper error handling
+        try:
+            memory_summary = self.memory_manager.generate_dynamic_battlefield_summary()
+            # logger.info(f"📊 Memory summary generated: {memory_summary[:100] if memory_summary else 'None'}...")
+            if memory_summary and "No battlefield activity" not in memory_summary:
+                # Add explicit coordinate list for clarity
+                attacked_coords = self._get_all_attacked_coordinates()
+                coord_list = f"ATTACKED COORDINATES (AVOID THESE): {', '.join(sorted(attacked_coords))}" if attacked_coords else "No coordinates attacked yet"
+                
+                context += f"\nPREVIOUS ATTACKS:\n{coord_list}\n\n{memory_summary}\n"
+                logger.info(f"✅ Battlefield intel added: {len(attacked_coords)} coordinates")
+            else:
+                context += f"\nPREVIOUS ATTACKS: No coordinates attacked yet\n"
+                logger.warning(f"⚠️ No battlefield intel available")
+        except Exception as e:
+            logger.error(f"❌ Memory system failed: {e}")
+        
+        return context
+
+    def _parse_action_from_conversation(self, conversation: Dict[str, Any], player_id: str) -> Optional[PlayerAction]:
+        """Parse action from conversation result"""
+        if not conversation or "chat_result" not in conversation:
+            return None
+        
+        chat_result = conversation["chat_result"]
+        if not hasattr(chat_result, "chat_history"):
+            return None
+        
+        # Look for player's response in chat history
+        for message in chat_result.chat_history:
+            if message.get("name") == player_id:
+                content = message.get("content", "")
+                return self._parse_action_from_text(content, player_id)
+        
+        return None
+
+    def _parse_action_from_text(self, text: str, player_id: str) -> Optional[PlayerAction]:
+        """Parse action from text content"""
+        if not text:
+            return None
+        
+        text = text.upper().strip()
+        
+        # Parse BOMB action
+        bomb_match = re.search(r'\bBOMB\s+([A-J](?:10|[1-9]))\b', text)
+        if bomb_match:
+            coordinate = bomb_match.group(1)
+            reason_match = re.search(r'BOMB\s+[A-J](?:10|[1-9])\s*-?\s*(.*)', text)
+            reason = reason_match.group(1).strip() if reason_match else None
+            return PlayerAction(player_id, ActionType.BOMB, coordinate, reason)
+        
+        # Parse MOVE action
+        move_match = re.search(r'\bMOVE\s+(UP|DOWN|LEFT|RIGHT|ROTATE)\b', text)
+        if move_match:
+            direction = move_match.group(1)
+            reason_match = re.search(r'MOVE\s+(?:UP|DOWN|LEFT|RIGHT|ROTATE)\s*-?\s*(.*)', text)
+            reason = reason_match.group(1).strip() if reason_match else None
+            return PlayerAction(player_id, ActionType.MOVE, direction, reason)
+        
+        return None
+
+    def _extract_content_from_conversation(self, conversation: Dict[str, Any], player_id: str) -> str:
+        """Extract content from conversation result"""
+        if not conversation or "chat_result" not in conversation:
+            return ""
+        
+        chat_result = conversation["chat_result"]
+        if not hasattr(chat_result, "chat_history"):
+            return ""
+        
+        for message in chat_result.chat_history:
+            if message.get("name") == player_id:
+                content = message.get("content", "")
+                return str(content)
+        
+        return ""
+
+    # =============================================================================
+    # Game State and Victory
+    # =============================================================================
+
+    def _check_victory(self) -> bool:
         """Check if any team has won"""
+        team_ships_remaining = {}
+        
         for team_id, team in self.state.teams.items():
-            if team.grid.all_ships_sunk():
-                # This team lost, find the winner
-                for winner_id, winner_team in self.state.teams.items():
-                    if winner_id != team_id:
-                        self.state.winner = winner_id
-                        return True
+            remaining = sum(1 for ship in team.grid.ships if not ship.is_sunk)
+            team_ships_remaining[team_id] = remaining
+        
+        # Check for winner
+        teams_with_ships = [tid for tid, count in team_ships_remaining.items() if count > 0]
+        
+        if len(teams_with_ships) == 1:
+            self.state.winner = teams_with_ships[0]
+            return True
+        elif len(teams_with_ships) == 0:
+            self.state.winner = None  # Draw
+            return True
+        
         return False
-    
+
     async def _game_over_phase(self):
-        """Handle game over and victory announcement"""
+        """Handle game over and scoring"""
         self.state.phase = GamePhase.GAME_OVER
         
-        # Use programmatic game master for final announcement
-        await self.game_master.announce_game_over(self.state.winner)
+        # Calculate final scores
+        self._calculate_final_scores()
         
         if self.state.winner:
-            await self._log_game_event("GAME_OVER", f"{self.state.teams[self.state.winner].name} wins!",
-                                      {"winner": self.state.winner, "rounds": self.state.round_number})
+            winner_team = self.state.teams[self.state.winner]
+            await self._log_event("GAME_OVER", 
+                                f"{winner_team.name} wins after {self.state.round_number} rounds!",
+                                {"winner": self.state.winner})
         else:
-            await self._log_game_event("GAME_OVER", "Game ended without clear winner")
-    
-    async def _log_game_event(self, event_type: str, message: str, 
-                         metadata: Optional[Dict] = None):
-        """Log game events with clean output"""
+            await self._log_event("GAME_OVER", 
+                                "Draw - all ships destroyed!",
+                                {"winner": None})
+        
+        # Log final scores
+        await self._log_final_scores()
+
+    def _calculate_final_scores(self):
+        """Calculate final scores for all players"""
+        winning_team = self.state.winner
+        
+        for team_id, team in self.state.teams.items():
+            for member in team.members:
+                score = self.state.player_scores[member]
+                
+                # Team victory bonus
+                if team_id == winning_team:
+                    score.team_victory = 100
+                
+                # Ship survival bonus
+                player_ship = team.grid.get_ship_by_owner(member)
+                if player_ship and not player_ship.is_sunk:
+                    score.ship_survival = 20
+
+    async def _log_final_scores(self):
+        """Log final score summary"""
+        score_summary = "FINAL SCORES:\n"
+        
+        for team_id, team in self.state.teams.items():
+            score_summary += f"\n{team.name}:\n"
+            team_total = 0
+            
+            for member in team.members:
+                score = self.state.player_scores[member]
+                score_summary += f"  {member}: {score.total_score} points\n"
+                score_summary += f"    (Victory: {score.team_victory}, Survival: {score.ship_survival}, "
+                score_summary += f"Coordination: {score.coordination_bonus}, Penalties: {score.waste_penalty})\n"
+                team_total += score.total_score
+            
+            score_summary += f"  Team Total: {team_total}\n"
+        
+        await self._log_event("FINAL_SCORES", score_summary)
+
+    # =============================================================================
+    # Logging and Export  
+    # =============================================================================
+
+    async def _log_event(self, event_type: str, message: str, metadata: Optional[Dict[str, Any]] = None):
+        """Log game event"""
         event = {
             "timestamp": datetime.now().isoformat(),
             "event_type": event_type,
@@ -1320,145 +1550,195 @@ Strategic note: Use this intel to avoid already-attempted coordinates."""
                 "phase": self.state.phase.value,
                 "round": self.state.round_number,
                 "current_team": self.state.current_team,
-                "current_player": self.state.current_player
-            }
+                "eliminated_players": list(self.state.eliminated_players),
+            },
         }
         
         self.state.game_log.append(event)
         
-        # Clean console output with phase and round info
-        if event_type in ["PHASE_START", "TEAM_ROUND_START", "PLAYER_TURN_START", "ATTACK_RESULT", "GAME_OVER"]:
-            phase_indicator = f"[{self.state.phase.value.upper()}]"
-            round_indicator = f"[R{self.state.round_number}]" if self.state.round_number > 0 else ""
-            logger.info(f"{phase_indicator} {round_indicator} {message}")
-    
-    def save_game_log(self, filename: Optional[str] = None):
-        """Save complete game log to file"""
-        if not filename:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"battleship_game_{timestamp}.json"
-        
-        game_summary = {
-            "game_config": self.config,
-            "final_state": {
-                "phase": self.state.phase.value,
-                "winner": self.state.winner,
-                "total_rounds": self.state.round_number,
-                "teams": {
-                    team_id: {
-                        "name": team.name,
-                        "members": team.members,
-                        "ships_remaining": len([s for s in team.grid.ships if not s.is_sunk])
-                    }
-                    for team_id, team in self.state.teams.items()
-                }
-            },
-            "coordinate_history": self.coordinate_history,
-            "game_log": self.state.game_log
-        }
-        
+        # Log important events
+        if event_type in {"GAME_START", "PHASE_START", "ALPHA_DELIBERATION_START", "BETA_INDIVIDUAL_START", 
+                         "SIMULTANEOUS_EXECUTION_START", "BOMB_RESULT", "MOVE_SUCCESS", "GAME_OVER"}:
+            logger.info(f"[{event_type}] {message}")
+
+    def save_game_log(self, filename: Optional[str] = None) -> Path:
+        """Save complete game log with scores and statistics"""
         output_dir = Path("output")
         output_dir.mkdir(exist_ok=True)
         
-        with open(output_dir / filename, 'w') as f:
-            json.dump(game_summary, f, indent=2)
+        if not filename:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"simultaneous_battleship_{timestamp}.json"
         
-        logger.info(f"Game log saved to {output_dir / filename}")
-        return output_dir / filename
-    
-    def get_game_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive game statistics"""
-        stats = {
-            "game_duration_rounds": self.state.round_number,
-            "winner": self.state.winner,
-            "teams": {},
-            "player_performance": {},
-            "communication_metrics": {}
+        # Compile comprehensive game data
+        game_data = {
+            "game_type": "simultaneous_battleship",
+            "timestamp": datetime.now().isoformat(),
+            "configuration": self.config,
+            "final_state": {
+                "phase": self.state.phase.value,
+                "winner": self.state.winner,
+                "winner_name": self.state.teams[self.state.winner].name if self.state.winner else None,
+                "total_rounds": self.state.round_number,
+                "eliminated_players": self.state.eliminated_players,
+            },
+            "team_stats": {},
+            "player_scores": {},
+            "game_log": self.state.game_log,
+            "memory_export": self.memory_manager.export_all_memories(),
         }
         
         # Team statistics
         for team_id, team in self.state.teams.items():
-            team_stats = {
+            ships_remaining = sum(1 for ship in team.grid.ships if not ship.is_sunk)
+            total_ships = len(team.grid.ships)
+            
+            game_data["team_stats"][team_id] = {
                 "name": team.name,
-                "member_count": len(team.members),
-                "ships_sunk": len([s for s in team.grid.ships if s.is_sunk]),
-                "ships_total": len(team.grid.ships),
-                "survival_rate": len([s for s in team.grid.ships if not s.is_sunk]) / len(team.grid.ships) if team.grid.ships else 0
-            }
-            stats["teams"][team_id] = team_stats
-        
-        # Player performance
-        for player_id, coordinates in self.coordinate_history.items():
-            stats["player_performance"][player_id] = {
-                "total_attacks": len(coordinates),
-                "coordinates_called": coordinates
+                "coordination_enabled": team.coordination_enabled,
+                "members": team.members,
+                "ships_remaining": ships_remaining,
+                "ships_total": total_ships,
+                "survival_rate": ships_remaining / total_ships if total_ships > 0 else 0.0,
+                "eliminated_members": [p for p in team.members if p in self.state.eliminated_players],
             }
         
-        # Communication metrics
-        communication_events = [event for event in self.state.game_log 
-                               if event["event_type"] in ["AI_CONSULTATION", "TEAM_DISCUSSION"]]
-        stats["communication_metrics"] = {
-            "total_communications": len(communication_events),
-            "ai_consultations": len([e for e in communication_events if e["event_type"] == "AI_CONSULTATION"]),
-            "team_discussions": len([e for e in communication_events if e["event_type"] == "TEAM_DISCUSSION"])
+        # Player scores
+        for player_id, score in self.state.player_scores.items():
+            game_data["player_scores"][player_id] = {
+                "total_score": score.total_score,
+                "team_victory": score.team_victory,
+                "ship_survival": score.ship_survival,
+                "coordination_bonus": score.coordination_bonus,
+                "waste_penalty": score.waste_penalty,
+                "eliminated": player_id in self.state.eliminated_players,
+            }
+        
+        # Save to file
+        file_path = output_dir / filename
+        with file_path.open('w') as f:
+            json.dump(game_data, f, indent=2)
+        
+        logger.info(f"Game log saved to {file_path}")
+        return file_path
+
+    def get_game_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive game statistics"""
+        stats = {
+            "game_type": "simultaneous_battleship",
+            "duration_rounds": self.state.round_number,
+            "winner": self.state.winner,
+            "winner_name": self.state.teams[self.state.winner].name if self.state.winner else None,
+            "total_eliminations": len(self.state.eliminated_players),
+            "team_performance": {},
+            "coordination_analysis": {},
+            "action_metrics": {},
+            "score_summary": {},
         }
+        
+        # Team performance
+        for team_id, team in self.state.teams.items():
+            ships_remaining = sum(1 for ship in team.grid.ships if not ship.is_sunk)
+            total_ships = len(team.grid.ships)
+            team_score = sum(self.state.player_scores[member].total_score for member in team.members)
+            
+            stats["team_performance"][team_id] = {
+                "name": team.name,
+                "coordination_enabled": team.coordination_enabled,
+                "ships_remaining": ships_remaining,
+                "survival_rate": ships_remaining / total_ships if total_ships > 0 else 0.0,
+                "team_score": team_score,
+                "average_player_score": team_score / len(team.members) if team.members else 0,
+            }
+        
+        # Action metrics from game log
+        bomb_actions = len([e for e in self.state.game_log if e["event_type"] == "BOMB_RESULT"])
+        move_actions = len([e for e in self.state.game_log if e["event_type"] in ["MOVE_SUCCESS", "MOVE_BLOCKED"]])
+        
+        stats["action_metrics"] = {
+            "total_bomb_actions": bomb_actions,
+            "total_move_actions": move_actions,
+            "action_ratio": move_actions / bomb_actions if bomb_actions > 0 else 0,
+        }
+        
+        # Score summary
+        for player_id, score in self.state.player_scores.items():
+            stats["score_summary"][player_id] = {
+                "total": score.total_score,
+                "breakdown": {
+                    "victory": score.team_victory,
+                    "survival": score.ship_survival,
+                    "coordination": score.coordination_bonus,
+                    "penalties": score.waste_penalty,
+                }
+            }
         
         return stats
 
 
-# Integration with existing agent network
-async def run_battleship_simulation(agent_network, battleship_config_path: str):
+# =============================================================================
+# Main Runner Function
+# =============================================================================
+
+async def run_simultaneous_battleship_simulation(agent_network, battleship_config_path: str, 
+                                               random_seed: Optional[int] = None):
     """
-    Main function to run battleship simulation with agent network
+    Main entry point for running Simultaneous Battleship simulation
     
     Args:
-        agent_network: Initialized AgentNetwork instance
-        battleship_config_path: Path to battleship_config.json
-    """
+        agent_network: Configured AgentNetwork instance
+        battleship_config_path: Path to battleship configuration JSON
+        random_seed: Optional random seed for reproducibility
     
-    # Initialize battleship game
-    game = BattleshipGame(battleship_config_path, agent_network)
+    Returns:
+        Tuple of (game_instance, statistics_dict)
+    """
+    game = BattleshipGame(battleship_config_path, agent_network, random_seed)
     
     try:
-        # Start the game
+        logger.info("🚀 STARTING SIMULTANEOUS BATTLESHIP SIMULATION")
+        logger.info("=" * 60)
+        logger.info("🎯 Experiment: Alpha 3-Phase Coordination vs Beta Individual Decisions")
+        logger.info("⚡ NEW: Simultaneous execution eliminates turn order bias")
+        logger.info("🚢 Features: Individual ship ownership, BOMB/MOVE actions, player elimination")
+        logger.info("📊 Scoring: Team victory, ship survival, coordination bonuses, waste penalties")
+        
         await game.start_game()
         
-        # Get final statistics
         stats = game.get_game_statistics()
-        
-        # Save game log
         log_file = game.save_game_log()
         
         # Print summary
-        print("\n🎮 BATTLESHIP GAME COMPLETE!")
-        print("=" * 50)
+        print("\n" + "=" * 60)
+        print("🎮 SIMULTANEOUS BATTLESHIP SIMULATION COMPLETE")
+        print("=" * 60)
         
         if game.state.winner:
-            winner_team = game.state.teams[game.state.winner]
-            print(f"🏆 WINNER: {winner_team.name}")
+            winner_name = game.state.teams[game.state.winner].name
+            coordination_type = "Coordinated" if game.state.teams[game.state.winner].coordination_enabled else "Individual"
+            print(f"🏆 Winner: {winner_name} ({coordination_type})")
         else:
-            print("🤝 GAME ENDED WITHOUT CLEAR WINNER")
+            print("🤝 Result: Draw")
         
-        print(f"📊 Total Rounds: {game.state.round_number}")
-        print(f"📝 Game Log: {log_file}")
+        print(f"📊 Rounds: {game.state.round_number}")
+        print(f"💀 Eliminations: {len(game.state.eliminated_players)}")
+        print(f"📁 Log saved: {log_file}")
         
-        # Team summary
-        print("\n📈 TEAM PERFORMANCE:")
-        for team_id, team_stats in stats["teams"].items():
-            team = game.state.teams[team_id]
-            print(f"  {team_stats['name']}: {team_stats['ships_sunk']}/{team_stats['ships_total']} ships lost")
+        # Team scores
+        print("\n📈 TEAM SCORES:")
+        for team_id, team_data in stats["team_performance"].items():
+            coord_type = "Coordinated" if team_data["coordination_enabled"] else "Individual"
+            print(f"  {team_data['name']} ({coord_type}): {team_data['team_score']} points")
         
-        # Player summary  
-        print("\n🎯 PLAYER ACTIVITY:")
-        for player_id, player_stats in stats["player_performance"].items():
-            print(f"  {player_id}: {player_stats['total_attacks']} attacks")
-        
-        print(f"\n💬 Communication: {stats['communication_metrics']['total_communications']} total interactions")
-        print(f"   🤖 AI consultations: {stats['communication_metrics']['ai_consultations']}")
-        print(f"   👥 Team discussions: {stats['communication_metrics']['team_discussions']}")
+        print("=" * 60)
         
         return game, stats
         
     except Exception as e:
-        logger.error(f"Battleship simulation failed: {e}")
+        logger.error(f"Simultaneous battleship simulation failed: {e}")
         raise
+
+
+if __name__ == "__main__":
+    print("Run via battleship_runner.py for proper async execution.")
+    print("This file provides the BattleshipGame class and run_simultaneous_battleship_simulation function.")

@@ -1,0 +1,3058 @@
+{
+  "game_type": "dynamic_battleship",
+  "game_config": {
+    "game_config": {
+      "grid_size": [
+        10,
+        10
+      ],
+      "victory_condition": "sink_all_ships",
+      "max_rounds": 100,
+      "coordinate_format": "letter_number",
+      "game_master_type": "programmatic",
+      "game_type": "dynamic_battleship",
+      "individual_ship_ownership": true,
+      "dual_action_space": true,
+      "movement_enabled": true,
+      "ship_sets": {
+        "standard": [
+          {
+            "name": "Carrier",
+            "size": 5,
+            "quantity": 1
+          },
+          {
+            "name": "Battleship",
+            "size": 4,
+            "quantity": 1
+          },
+          {
+            "name": "Cruiser",
+            "size": 3,
+            "quantity": 1
+          },
+          {
+            "name": "Submarine",
+            "size": 3,
+            "quantity": 1
+          },
+          {
+            "name": "Destroyer",
+            "size": 2,
+            "quantity": 1
+          }
+        ],
+        "quick": [
+          {
+            "name": "Battleship",
+            "size": 4,
+            "quantity": 1
+          },
+          {
+            "name": "Cruiser",
+            "size": 3,
+            "quantity": 1
+          },
+          {
+            "name": "Destroyer",
+            "size": 2,
+            "quantity": 1
+          }
+        ]
+      },
+      "selected_ship_set": "quick",
+      "ship_assignment": {
+        "method": "random_individual",
+        "one_ship_per_player": true,
+        "eliminate_on_ship_loss": true
+      }
+    },
+    "team_config": {
+      "team_a": {
+        "name": "Alpha Squadron",
+        "color": "blue",
+        "members": [
+          "player_a1",
+          "player_a2",
+          "player_a3"
+        ],
+        "communication_style": "structured_deliberation",
+        "team_coordination": true,
+        "deliberation_format": "proposal_critique_consensus",
+        "decision_making": "collaborative"
+      },
+      "team_b": {
+        "name": "Beta Fleet",
+        "color": "red",
+        "members": [
+          "player_b1",
+          "player_b2",
+          "player_b3"
+        ],
+        "communication_style": "individual_decisions",
+        "team_coordination": false,
+        "deliberation_format": "none",
+        "decision_making": "individual"
+      }
+    },
+    "action_config": {
+      "dual_action_space": {
+        "enabled": true,
+        "actions": [
+          "BOMB",
+          "MOVE"
+        ],
+        "format": {
+          "bomb": "BOMB [coordinate]",
+          "move": "MOVE [direction]"
+        }
+      },
+      "movement_rules": {
+        "allowed_directions": [
+          "UP",
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "ROTATE"
+        ],
+        "collision_detection": true,
+        "preserve_hits_on_move": true,
+        "boundary_checking": true
+      },
+      "bomb_rules": {
+        "no_repeat_coordinates": true,
+        "friendly_fire_protection": false,
+        "coordinate_format": "A1-J10"
+      }
+    },
+    "deliberation_config": {
+      "team_alpha": {
+        "enabled": true,
+        "format": "structured_proposal_critique",
+        "phases": [
+          {
+            "name": "proposal_round",
+            "description": "Each player proposes action with reasoning",
+            "max_words": 50
+          },
+          {
+            "name": "critique_round",
+            "description": "Players agree/disagree with teammates' proposals",
+            "max_words": 25
+          },
+          {
+            "name": "execution_round",
+            "description": "Execute agreed actions"
+          }
+        ],
+        "consensus_required": false,
+        "individual_override": false
+      },
+      "team_beta": {
+        "enabled": false,
+        "format": "none",
+        "individual_decisions_only": true
+      }
+    },
+    "turn_config": {
+      "turn_order": "team_sequential",
+      "max_action_timeout_seconds": 30,
+      "valid_actions_provided": true,
+      "elimination_handling": "skip_eliminated_players"
+    },
+    "game_phases": {
+      "ship_placement": {
+        "description": "Random individual ship assignment and automatic placement",
+        "assignment_method": "random_individual",
+        "placement_method": "random_automatic",
+        "deliberation_enabled": false,
+        "seed_configurable": true
+      },
+      "battle": {
+        "description": "Dynamic battleship with dual action space and team deliberation",
+        "dual_actions_enabled": true,
+        "movement_enabled": true,
+        "team_deliberation": {
+          "alpha_squadron": true,
+          "beta_fleet": false
+        },
+        "individual_elimination": true
+      },
+      "game_over": {
+        "description": "Victory when all enemy ships sunk or players eliminated",
+        "victory_conditions": [
+          "all_ships_sunk",
+          "all_players_eliminated"
+        ],
+        "statistics_generation": true,
+        "memory_export": true
+      }
+    },
+    "communication_rules": {
+      "during_ship_placement": {
+        "team_internal": false,
+        "cross_team": false,
+        "reason": "automatic_placement"
+      },
+      "during_battle": {
+        "team_alpha": {
+          "deliberation_enabled": true,
+          "format": "structured_proposal_critique",
+          "phases": [
+            "proposal",
+            "critique",
+            "execution"
+          ],
+          "team_internal": true,
+          "cross_team": false
+        },
+        "team_beta": {
+          "deliberation_enabled": false,
+          "format": "individual_only",
+          "team_internal": false,
+          "cross_team": false
+        }
+      },
+      "game_master_announcements": {
+        "after_each_action": "all_players",
+        "announcement_includes": [
+          "bomb_results",
+          "move_results",
+          "ship_eliminations",
+          "player_eliminations",
+          "valid_actions"
+        ]
+      }
+    },
+    "agent_assignments": {
+      "player_a1": {
+        "role": "player",
+        "team": "team_a",
+        "ship_assignment": "random",
+        "behavior": "collaborative_deliberation"
+      },
+      "player_a2": {
+        "role": "player",
+        "team": "team_a",
+        "ship_assignment": "random",
+        "behavior": "collaborative_deliberation"
+      },
+      "player_a3": {
+        "role": "player",
+        "team": "team_a",
+        "ship_assignment": "random",
+        "behavior": "collaborative_deliberation"
+      },
+      "player_b1": {
+        "role": "player",
+        "team": "team_b",
+        "ship_assignment": "random",
+        "behavior": "individual_decisions"
+      },
+      "player_b2": {
+        "role": "player",
+        "team": "team_b",
+        "ship_assignment": "random",
+        "behavior": "individual_decisions"
+      },
+      "player_b3": {
+        "role": "player",
+        "team": "team_b",
+        "ship_assignment": "random",
+        "behavior": "individual_decisions"
+      }
+    },
+    "logging": {
+      "log_all_communications": true,
+      "log_action_decisions": true,
+      "log_team_deliberations": true,
+      "log_ship_movements": true,
+      "log_individual_eliminations": true,
+      "track_game_state": true,
+      "performance_metrics": true,
+      "export_memories": true
+    }
+  },
+  "final_state": {
+    "phase": "game_over",
+    "winner": null,
+    "total_rounds": 101,
+    "eliminated_players": [],
+    "ship_ownership": {
+      "team_a": {
+        "player_a1": {
+          "ship_name": "Battleship",
+          "ship_size": 4,
+          "is_sunk": false,
+          "hits_taken": 0
+        },
+        "player_a2": {
+          "ship_name": "Destroyer",
+          "ship_size": 2,
+          "is_sunk": false,
+          "hits_taken": 0
+        },
+        "player_a3": {
+          "ship_name": "Cruiser",
+          "ship_size": 3,
+          "is_sunk": false,
+          "hits_taken": 0
+        }
+      },
+      "team_b": {
+        "player_b1": {
+          "ship_name": "Battleship",
+          "ship_size": 4,
+          "is_sunk": false,
+          "hits_taken": 0
+        },
+        "player_b2": {
+          "ship_name": "Cruiser",
+          "ship_size": 3,
+          "is_sunk": false,
+          "hits_taken": 0
+        },
+        "player_b3": {
+          "ship_name": "Destroyer",
+          "ship_size": 2,
+          "is_sunk": false,
+          "hits_taken": 0
+        }
+      }
+    },
+    "teams": {
+      "team_a": {
+        "name": "Alpha Squadron",
+        "members": [
+          "player_a1",
+          "player_a2",
+          "player_a3"
+        ],
+        "ships_remaining": 3
+      },
+      "team_b": {
+        "name": "Beta Fleet",
+        "members": [
+          "player_b1",
+          "player_b2",
+          "player_b3"
+        ],
+        "ships_remaining": 3
+      }
+    }
+  },
+  "coordinate_history": {
+    "player_a1": [],
+    "player_a2": [],
+    "player_a3": [],
+    "player_b1": [],
+    "player_b2": [],
+    "player_b3": []
+  },
+  "game_log": [
+    {
+      "timestamp": "2025-08-13T16:10:35.703938",
+      "event_type": "GAME_START",
+      "message": "Dynamic Battleship game beginning",
+      "metadata": {},
+      "game_state": {
+        "phase": "setup",
+        "round": 1,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.703952",
+      "event_type": "PHASE_START",
+      "message": "Ship placement phase beginning",
+      "metadata": {},
+      "game_state": {
+        "phase": "ship_placement",
+        "round": 1,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.704231",
+      "event_type": "PHASE_END",
+      "message": "All teams have completed ship placement",
+      "metadata": {},
+      "game_state": {
+        "phase": "ship_placement",
+        "round": 1,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.704235",
+      "event_type": "PHASE_START",
+      "message": "Battle phase beginning",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 1,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.704264",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 1",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 1,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.704505",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 1",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 1,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.704657",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 2",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 2,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.704850",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 2",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 2,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.704992",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 3",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 3,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.705174",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 3",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 3,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.705314",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 4",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 4,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.705490",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 4",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 4,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.705628",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 5",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 5,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.705802",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 5",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 5,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.705939",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 6",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 6,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.706115",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 6",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 6,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.706260",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 7",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 7,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.706440",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 7",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 7,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.706576",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 8",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 8,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.706750",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 8",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 8,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.706888",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 9",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 9,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.707065",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 9",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 9,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.707200",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 10",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 10,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.707371",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 10",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 10,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.707508",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 11",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 11,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.707685",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 11",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 11,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.707820",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 12",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 12,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.707995",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 12",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 12,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.708130",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 13",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 13,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.708300",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 13",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 13,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.708432",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 14",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 14,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.708609",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 14",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 14,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.708749",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 15",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 15,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.708926",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 15",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 15,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.709062",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 16",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 16,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.709232",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 16",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 16,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.709364",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 17",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 17,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.709534",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 17",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 17,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.709672",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 18",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 18,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.709842",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 18",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 18,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.709976",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 19",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 19,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.710154",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 19",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 19,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.710291",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 20",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 20,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.710463",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 20",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 20,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.710595",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 21",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 21,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.710768",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 21",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 21,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.710901",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 22",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 22,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.711075",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 22",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 22,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.711215",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 23",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 23,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.711391",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 23",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 23,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.711529",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 24",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 24,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.711703",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 24",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 24,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.711835",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 25",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 25,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.712005",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 25",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 25,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.712140",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 26",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 26,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.712318",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 26",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 26,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.712452",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 27",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 27,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.712624",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 27",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 27,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.712761",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 28",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 28,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.712939",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 28",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 28,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.713077",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 29",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 29,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.713248",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 29",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 29,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.713381",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 30",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 30,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.713554",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 30",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 30,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.713689",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 31",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 31,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.713864",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 31",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 31,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.713999",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 32",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 32,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.714207",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 32",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 32,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.714370",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 33",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 33,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.714548",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 33",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 33,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.714683",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 34",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 34,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.714857",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 34",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 34,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.714993",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 35",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 35,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.715164",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 35",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 35,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.715296",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 36",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 36,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.715468",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 36",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 36,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.715605",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 37",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 37,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.715777",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 37",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 37,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.715910",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 38",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 38,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.716085",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 38",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 38,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.716218",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 39",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 39,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.716388",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 39",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 39,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.716523",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 40",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 40,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.716691",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 40",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 40,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.716826",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 41",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 41,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.716999",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 41",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 41,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.717137",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 42",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 42,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.717308",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 42",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 42,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.717441",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 43",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 43,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.717610",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 43",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 43,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.717742",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 44",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 44,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.717914",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 44",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 44,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.718046",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 45",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 45,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.718224",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 45",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 45,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.718358",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 46",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 46,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.718530",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 46",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 46,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.718662",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 47",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 47,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.718833",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 47",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 47,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.718966",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 48",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 48,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.719137",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 48",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 48,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.719270",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 49",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 49,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.719441",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 49",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 49,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.719574",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 50",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 50,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.719745",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 50",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 50,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.719879",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 51",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 51,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.720049",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 51",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 51,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.720182",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 52",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 52,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.720352",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 52",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 52,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.720485",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 53",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 53,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.720663",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 53",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 53,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.720796",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 54",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 54,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.720971",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 54",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 54,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.721107",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 55",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 55,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.721282",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 55",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 55,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.721416",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 56",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 56,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.721587",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 56",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 56,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.721719",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 57",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 57,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.721890",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 57",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 57,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.722026",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 58",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 58,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.722204",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 58",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 58,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.722337",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 59",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 59,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.722506",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 59",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 59,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.722639",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 60",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 60,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.722810",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 60",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 60,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.722944",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 61",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 61,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.723118",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 61",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 61,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.723252",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 62",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 62,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.723495",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 62",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 62,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.723639",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 63",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 63,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.723816",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 63",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 63,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.723955",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 64",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 64,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.724127",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 64",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 64,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.724264",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 65",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 65,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.724440",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 65",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 65,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.724575",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 66",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 66,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.724747",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 66",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 66,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.724881",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 67",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 67,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.725052",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 67",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 67,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.725190",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 68",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 68,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.725362",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 68",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 68,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.725497",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 69",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 69,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.725673",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 69",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 69,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.725807",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 70",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 70,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.725984",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 70",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 70,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.726120",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 71",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 71,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.726298",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 71",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 71,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.726433",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 72",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 72,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.726603",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 72",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 72,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.726737",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 73",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 73,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.726908",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 73",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 73,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.727042",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 74",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 74,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.727218",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 74",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 74,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.727354",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 75",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 75,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.727530",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 75",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 75,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.727665",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 76",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 76,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.727836",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 76",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 76,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.727971",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 77",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 77,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.728143",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 77",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 77,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.728276",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 78",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 78,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.728446",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 78",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 78,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.728581",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 79",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 79,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.728752",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 79",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 79,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.728888",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 80",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 80,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.729057",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 80",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 80,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.729194",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 81",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 81,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.729364",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 81",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 81,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.729497",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 82",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 82,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.729677",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 82",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 82,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.729815",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 83",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 83,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.729989",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 83",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 83,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.730130",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 84",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 84,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.730310",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 84",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 84,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.730446",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 85",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 85,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.730618",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 85",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 85,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.730753",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 86",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 86,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.730923",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 86",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 86,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.731057",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 87",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 87,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.731231",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 87",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 87,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.731366",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 88",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 88,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.731540",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 88",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 88,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.731679",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 89",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 89,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.731851",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 89",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 89,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.731984",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 90",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 90,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.732161",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 90",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 90,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.732300",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 91",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 91,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.732471",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 91",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 91,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.732605",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 92",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 92,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.732776",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 92",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 92,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.732911",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 93",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 93,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.733085",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 93",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 93,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.733218",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 94",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 94,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.733390",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 94",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 94,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.733527",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 95",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 95,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.733697",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 95",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 95,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.733831",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 96",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 96,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.733999",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 96",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 96,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.734133",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 97",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 97,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.734312",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 97",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 97,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.734447",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 98",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 98,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.734622",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 98",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 98,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.734756",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 99",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 99,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.734928",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 99",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 99,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.735062",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Alpha Squadron deliberation round 100",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 100,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.735240",
+      "event_type": "TEAM_ROUND_START",
+      "message": "Beta Fleet individual round 100",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 100,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.735373",
+      "event_type": "GAME_TIMEOUT",
+      "message": "Game ended due to round limit",
+      "metadata": {},
+      "game_state": {
+        "phase": "battle",
+        "round": 101,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.735378",
+      "event_type": "GAME_OVER",
+      "message": "Game ended without clear winner",
+      "metadata": {},
+      "game_state": {
+        "phase": "game_over",
+        "round": 101,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.735396",
+      "event_type": "FINAL_SHIP_COUNT",
+      "message": "Alpha Squadron: 3 ships remaining",
+      "metadata": {},
+      "game_state": {
+        "phase": "game_over",
+        "round": 101,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    },
+    {
+      "timestamp": "2025-08-13T16:10:35.735399",
+      "event_type": "FINAL_SHIP_COUNT",
+      "message": "Beta Fleet: 3 ships remaining",
+      "metadata": {},
+      "game_state": {
+        "phase": "game_over",
+        "round": 101,
+        "current_team": null,
+        "current_player": null,
+        "eliminated_players": []
+      }
+    }
+  ]
+}

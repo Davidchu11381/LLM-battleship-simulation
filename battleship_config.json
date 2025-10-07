@@ -4,6 +4,17 @@
     "victory_condition": "sink_all_ships",
     "max_rounds": 100,
     "coordinate_format": "letter_number",
+    "game_master_type": "programmatic",
+    "game_type": "dynamic_battleship",
+    "individual_ship_ownership": true,
+    "dual_action_space": true,
+    "movement_enabled": true,
+    "retry_policy": "once",
+    "expose_bomb_options": false,
+    "debate_burst_rounds": 2,
+    "burst_broadcast_words": 25,
+    "burst_ack_words": 12,
+    "burst_order": "rotate",
     "ship_sets": {
       "standard": [
         {"name": "Carrier", "size": 5, "quantity": 1},
@@ -18,172 +29,192 @@
         {"name": "Destroyer", "size": 2, "quantity": 1}
       ]
     },
-    "selected_ship_set": "standard"
+    "selected_ship_set": "quick",
+    "ship_assignment": {
+      "method": "random_individual",
+      "one_ship_per_player": true,
+      "eliminate_on_ship_loss": true
+    }
   },
   "team_config": {
     "team_a": {
       "name": "Alpha Squadron",
       "color": "blue",
-      "leader": "leader_alpha",
-      "members": ["leader_alpha", "player_a1", "player_a2"],
-      "ship_placement_deliberation_turns": 0,
-      "shared_grid": true
+      "members": ["player_a1", "player_a2", "player_a3"],
+      "communication_style": "structured_deliberation",
+      "team_coordination": true,
+      "deliberation_format": "proposal_critique_consensus",
+      "decision_making": "collaborative"
     },
     "team_b": {
-      "name": "Bravo Fleet",
-      "color": "red", 
-      "leader": "leader_bravo",
-      "members": ["leader_bravo", "player_b1"],
-      "ship_placement_deliberation_turns": 0,
-      "shared_grid": true
+      "name": "Beta Fleet",
+      "color": "red",
+      "members": ["player_b1", "player_b2", "player_b3"],
+      "communication_style": "individual_decisions",
+      "team_coordination": false,
+      "deliberation_format": "none",
+      "decision_making": "individual"
+    }
+  },
+  "action_config": {
+    "dual_action_space": {
+      "enabled": true,
+      "actions": ["BOMB", "MOVE"],
+      "format": {
+        "bomb": "BOMB [coordinate]",
+        "move": "MOVE [direction]"
+      }
+    },
+    "movement_rules": {
+      "allowed_directions": ["UP", "DOWN", "LEFT", "RIGHT", "ROTATE"],
+      "collision_detection": true,
+      "preserve_hits_on_move": true,
+      "boundary_checking": true
+    },
+    "bomb_rules": {
+      "no_repeat_coordinates": true,
+      "friendly_fire_protection": false,
+      "coordinate_format": "A1-J10"
+    }
+  },
+  "deliberation_config": {
+    "team_alpha": {
+      "enabled": true,
+      "format": "structured_proposal_critique",
+      "phases": [
+        {
+          "name": "proposal_round",
+          "description": "Each player proposes action with reasoning",
+          "max_words": 50
+        },
+        {
+          "name": "critique_round", 
+          "description": "Players agree/disagree with teammates' proposals",
+          "max_words": 25
+        },
+        {
+          "name": "execution_round",
+          "description": "Execute agreed actions"
+        }
+      ],
+      "consensus_required": false,
+      "individual_override": false
+    },
+    "team_beta": {
+      "enabled": false,
+      "format": "none",
+      "individual_decisions_only": true
     }
   },
   "turn_config": {
-    "max_turns_per_round": "max_team_size",
-    "max_assistant_interaction_turns": 1,
-    "information_sharing_timing": "after_team_complete",
-    "max_team_communication_rounds": 1, 
-    "coordinate_call_timeout_seconds": 30,
-    "random_order": false
-  },
-  "player_profiles": {
-    "collaborative_leader": {
-      "description": "Leader who values team input and consensus",
-      "leadership_style": "collaborative",
-      "risk_tolerance": "medium",
-      "assistant_reliance": "medium",
-      "team_input_consideration": "high",
-      "decision_speed": "deliberate"
-    },
-    "aggressive_leader": {
-      "description": "Decisive leader who makes quick decisions",
-      "leadership_style": "authoritative",
-      "risk_tolerance": "high",
-      "assistant_reliance": "low",
-      "team_input_consideration": "minimal",
-      "decision_speed": "fast"
-    },
-    "analytical_player": {
-      "description": "Player who relies heavily on data and assistant input",
-      "strategy_focus": "systematic",
-      "risk_tolerance": "low",
-      "assistant_reliance": "high",
-      "communication_style": "detailed",
-      "decision_speed": "slow"
-    },
-    "intuitive_player": {
-      "description": "Player who trusts gut instincts over analysis",
-      "strategy_focus": "intuitive",
-      "risk_tolerance": "high", 
-      "assistant_reliance": "low",
-      "communication_style": "brief",
-      "decision_speed": "fast"
-    },
-    "team_player": {
-      "description": "Player who prioritizes team coordination",
-      "strategy_focus": "collaborative",
-      "risk_tolerance": "medium",
-      "assistant_reliance": "medium",
-      "communication_style": "supportive",
-      "decision_speed": "medium"
-    }
-  },
-  "agent_assignments": {
-    "leader_alpha": {
-      "role": "leader",
-      "profile": "collaborative_leader",
-      "has_assistant": true,
-      "assistant_id": "assistant_alpha_leader"
-    },
-    "player_a1": {
-      "role": "player", 
-      "profile": "analytical_player",
-      "has_assistant": true,
-      "assistant_id": "assistant_a1"
-    },
-    "player_a2": {
-      "role": "player",
-      "profile": "intuitive_player", 
-      "has_assistant": false,
-      "assistant_id": null
-    },
-    "leader_bravo": {
-      "role": "leader",
-      "profile": "aggressive_leader",
-      "has_assistant": true,
-      "assistant_id": "assistant_bravo_leader"
-    },
-    "player_b1": {
-      "role": "player",
-      "profile": "team_player",
-      "has_assistant": true,
-      "assistant_id": "assistant_b1"
-    }
-  },
-  "assistant_specializations": {
-    "systematic_advisor": {
-      "description": "Focuses on systematic grid coverage and probability",
-      "strategy_type": "systematic",
-      "suggestion_style": "detailed_reasoning",
-      "coordinate_preference": "probability_based"
-    },
-    "aggressive_advisor": {
-      "description": "Suggests high-risk, high-reward moves",
-      "strategy_type": "aggressive", 
-      "suggestion_style": "confident_brief",
-      "coordinate_preference": "center_focused"
-    },
-    "conservative_advisor": {
-      "description": "Conservative approach with safe moves",
-      "strategy_type": "conservative",
-      "suggestion_style": "cautious_detailed", 
-      "coordinate_preference": "edge_systematic"
-    }
-  },
-  "assistant_assignments": {
-    "assistant_alpha_leader": "systematic_advisor",
-    "assistant_a1": "systematic_advisor",
-    "assistant_bravo_leader": "aggressive_advisor",
-    "assistant_b1": "conservative_advisor"
+    "turn_order": "team_sequential",
+    "max_action_timeout_seconds": 30,
+    "valid_actions_provided": true,
+    "elimination_handling": "skip_eliminated_players"
   },
   "game_phases": {
     "ship_placement": {
-      "description": "Teams place ships through leader coordination",
-      "max_deliberation_turns": 1,
-      "communication_allowed": "team_only",
-      "decision_authority": "leader_final"
+      "description": "Random individual ship assignment and automatic placement",
+      "assignment_method": "random_individual",
+      "placement_method": "random_automatic",
+      "deliberation_enabled": false,
+      "seed_configurable": true
     },
     "battle": {
-      "description": "Turn-based coordinate calling",
-      "turn_order": "team_sequential",
-      "information_sharing": "after_team_round",
-      "assistant_interaction": "before_each_call"
+      "description": "Dynamic battleship with dual action space and team deliberation",
+      "dual_actions_enabled": true,
+      "movement_enabled": true,
+      "team_deliberation": {
+        "alpha_squadron": true,
+        "beta_fleet": false
+      },
+      "individual_elimination": true
     },
     "game_over": {
-      "description": "Victory conditions met",
-      "result_sharing": "all_teams",
-      "analysis_phase": true
+      "description": "Victory when all enemy ships sunk or players eliminated",
+      "victory_conditions": ["all_ships_sunk", "all_players_eliminated"],
+      "statistics_generation": true,
+      "memory_export": true
     }
   },
   "communication_rules": {
     "during_ship_placement": {
-      "team_internal": true,
+      "team_internal": false,
       "cross_team": false,
-      "assistant_consultation": true
+      "reason": "automatic_placement"
     },
     "during_battle": {
-      "team_internal": true,
-      "cross_team": false,
-      "assistant_consultation": true,
-      "information_sharing_timing": "after_team_complete"
+      "team_alpha": {
+        "deliberation_enabled": true,
+        "format": "structured_proposal_critique",
+        "phases": ["proposal", "critique", "execution"],
+        "team_internal": true,
+        "cross_team": false
+      },
+      "team_beta": {
+        "deliberation_enabled": false,
+        "format": "individual_only",
+        "team_internal": false,
+        "cross_team": false
+      }
+    },
+    "game_master_announcements": {
+      "after_each_action": "all_players",
+      "announcement_includes": [
+        "bomb_results",
+        "move_results", 
+        "ship_eliminations",
+        "player_eliminations",
+        "valid_actions"
+      ]
+    }
+  },
+  "agent_assignments": {
+    "player_a1": {
+      "role": "player",
+      "team": "team_a",
+      "ship_assignment": "random",
+      "behavior": "collaborative_deliberation"
+    },
+    "player_a2": {
+      "role": "player", 
+      "team": "team_a",
+      "ship_assignment": "random",
+      "behavior": "collaborative_deliberation"
+    },
+    "player_a3": {
+      "role": "player",
+      "team": "team_a", 
+      "ship_assignment": "random",
+      "behavior": "collaborative_deliberation"
+    },
+    "player_b1": {
+      "role": "player",
+      "team": "team_b",
+      "ship_assignment": "random", 
+      "behavior": "individual_decisions"
+    },
+    "player_b2": {
+      "role": "player",
+      "team": "team_b",
+      "ship_assignment": "random",
+      "behavior": "individual_decisions"
+    },
+    "player_b3": {
+      "role": "player",
+      "team": "team_b",
+      "ship_assignment": "random",
+      "behavior": "individual_decisions"
     }
   },
   "logging": {
     "log_all_communications": true,
-    "log_coordinate_calls": true,
-    "log_assistant_suggestions": true,
+    "log_action_decisions": true,
     "log_team_deliberations": true,
+    "log_ship_movements": true,
+    "log_individual_eliminations": true,
     "track_game_state": true,
-    "performance_metrics": true
+    "performance_metrics": true,
+    "export_memories": true
   }
 }
