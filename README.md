@@ -1,268 +1,166 @@
-# 🚀 LLM Agent Network Framework — Dynamic Battleship
+# LLM Agent Network: Does Coordination Make Multi-Agent Teams Smarter?
 
-Multi-agent Battleship experiment comparing coordinated team deliberation vs. individual decision-making with simultaneous execution to eliminate turn order bias.
+## The Problem
 
-## 🎯 Experiment Objective
+Multi-agent LLM systems are increasingly deployed for complex tasks, but a fundamental question remains unanswered: **does structured coordination actually help, or do independent agents perform just as well?**
 
-**Hypothesis:** Team Alpha (coordinated deliberation) outperforms Team Beta (individual decisions) when both teams execute actions simultaneously.
+This matters because coordination has costs. Deliberation takes time and tokens. Voting requires consensus-building. Shared memory increases context length. If individual agents can match coordinated teams, the simpler architecture wins.
 
-**Controls:** Same board, ships, LLM configs, and random seeds. Only coordination method differs.
+**What's missing:** Clean experimental comparisons are rare. Most multi-agent benchmarks conflate coordination benefits with other variables (different prompts, asymmetric information, turn-order advantages). We need a controlled environment where coordination is the *only* variable.
 
-## 📦 Project Structure
+## Research Questions
+
+1. **RQ1:** Does inter-agent coordination improve team performance in adversarial settings?
+2. **RQ2:** What mechanisms explain coordination benefits (or lack thereof)?
+3. **RQ3:** How does coordination affect offensive vs. defensive strategy allocation?
+
+## Our Approach
+
+We built a **Dynamic Battleship** testbed that isolates coordination effects:
+
+- **Two teams, identical capabilities:** Alpha Squadron (coordinated) vs. Beta Fleet (independent)
+- **Same information:** Both teams see the same battlefield state
+- **Simultaneous execution:** No turn-order bias
+- **Only difference:** Alpha deliberates (propose → critique → execute); Beta decides independently
+
+### Alpha's 3-Phase Deliberation Protocol
+1. **Proposal:** Each agent proposes a complete team strategy with reasoning
+2. **Critique:** Agents evaluate and vote on proposals
+3. **Execution:** Team executes the selected coordinated plan
+
+### Beta's Independent Approach
+- Each agent chooses actions independently
+- No communication, no shared planning
+- Parallel decision-making
+
+## Preliminary Results (n = 22)
+
+> **Note:** This is an ongoing experiment. Results below are preliminary and require additional trials for statistical confirmation. We are actively running more simulations and refining the experimental protocol.
+
+### Summary Table
+
+| Metric | Alpha (Coordinated) | Beta (Independent) | p-value |
+|--------|---------------------|-------------------|---------|
+| Win Rate | **68.2%** (15/22) | 31.8% (7/22) | 0.134 |
+| Ship Survival | **56.1%** | 24.2% | 0.008** |
+| Repeated Targets/Game | **2.86** | 13.41 | <0.001*** |
+| Offense Ratio | 88.1% | 96.2% | <0.001*** |
+| First Elimination | 5 games | 17 games | - |
+
+Effect size (Cohen's h): 0.74 (large)
+
+![Coordination Analysis](plots/coordination_analysis.png)
+
+### Key Findings
+
+**RQ1: Does coordination improve performance?**
+
+The coordinated team (Alpha) wins 68% of games compared to 32% for independent agents. While not yet statistically significant (p = 0.134) due to limited sample size, the effect size is large (h = 0.74). Critically, survival rate shows a significant difference: coordinated teams preserve 56% of ships vs. 24% for independent teams (p = 0.008).
+
+**RQ2: What mechanisms drive the difference?**
+
+The clearest finding is **targeting efficiency**. Independent agents waste nearly 5x more bombs on previously-targeted coordinates (13.4 vs 2.9 repeated targets per game, p < 0.001). This suggests coordination's primary benefit is *collective memory* and *action deconfliction*, not improved individual decision quality.
+
+Supporting this interpretation: hit rates are nearly identical (13.5% vs 11.9%, p = 0.76). When agents do shoot at new targets, they perform equally well. Coordination doesn't make agents smarter; it prevents them from duplicating effort.
+
+**RQ3: How does coordination affect strategy?**
+
+Coordinated teams allocate more resources to defense. Alpha uses 202 moves across all games vs. Beta's 64 (offense ratio: 88% vs 96%, p < 0.001). This defensive flexibility likely explains the survival gap. Beta's near-exclusive focus on offense (96%) means they rarely evade incoming attacks.
+
+The first-elimination data reinforces this: Beta loses a player first in 17/22 games (77%). Coordination provides early-game protection.
+
+### Interpretation
+
+Coordination benefits emerge not from better individual reasoning but from **collective resource allocation**:
+
+1. **Deconfliction:** Deliberation prevents multiple agents from targeting the same coordinate
+2. **Strategic balance:** Shared planning enables offense/defense tradeoffs that independent agents miss
+3. **Early protection:** Coordinated defense reduces first-blood disadvantage
+
+## Limitations and Ongoing Work
+
+This project is **actively in development**. Current limitations include:
+
+- **Sample size:** n = 22 valid games is insufficient for definitive conclusions on win rate. We estimate needing n > 50 for adequate statistical power.
+- **Error rate:** 29/51 games (57%) ended in errors or timeouts, indicating system stability issues being addressed.
+- **Single model:** Results are from one LLM configuration. Generalization across models is untested.
+- **Fixed protocol:** Only one coordination mechanism (propose-critique-vote) has been evaluated.
+
+**Planned extensions:**
+- Scale to 100+ valid trials
+- Test alternative coordination protocols (e.g., hierarchical, emergent)
+- Vary team sizes and ship configurations
+- Cross-model experiments
+
+---
+
+## Quick Start
+
+```bash
+# Install dependencies
+pip install ag2[ollama] networkx
+
+# Start LLM server
+CUDA_VISIBLE_DEVICES=0,1,2,3 OLLAMA_HOST=127.0.0.1:11436 ollama serve &
+
+# Run single experiment
+python battleship_runner.py --seed 123
+
+# Run batch trials
+for s in $(seq 1 50); do
+  python battleship_runner.py --seed $((s*100))
+done
+
+# Analyze results
+python analyze_results.py
+```
+
+## Project Structure
 
 ```
 LLM-Agent-Network/
-├── agent_network.py          # Agent messaging and communication
-├── battleship_game.py        # Game engine and rules
-├── battleship_runner.py      # Main launcher
-├── memory_manager.py         # Team vs. individual memory management
-├── battleship_config.json    # Game settings
-├── LLM_config.json           # Agent configurations
-├── networks/battleship.txt   # Team communication topology
-└── output/                   # Results and logs
+├── battleship_runner.py      # Main experiment launcher
+├── battleship_game.py        # Game engine (simultaneous execution)
+├── agent_network.py          # Agent communication layer
+├── memory_manager.py         # Shared vs. individual memory systems
+├── analyze_results.py        # Statistical analysis script
+├── LLM_config.json           # Model configuration
+├── battleship_config.json    # Game rules and team settings
+├── output/                   # Game logs (JSON)
+└── plots/                    # Generated figures
 ```
 
-## 🕹️ Game Rules
+## Game Rules
 
-- **Board:** 10×10 grid (A1–J10)
-- **Teams:** Alpha Squadron vs. Beta Fleet (3 agents each)
-- **Ships:** Each agent controls one ship (Battleship-4, Cruiser-3, or Destroyer-2)
-- **Actions:** Each turn choose `BOMB <coord>` or `MOVE <direction>`
-- **Execution:** Simultaneous execution after both teams complete decision phase
-- **Victory:** First team to sink all enemy ships wins
+- 10x10 grid, 3 ships per team (sizes: 4, 3, 2)
+- Each agent controls one ship
+- Dual action space: `BOMB <coord>` or `MOVE <direction>`
+- Simultaneous execution each round
+- Victory condition: Sink all enemy ships
+- Player elimination: Agents are removed when their ship sinks
 
-## 🧠 Team Differences
+## Configuration
 
-**Alpha Squadron (Coordinated Deliberation):**
-- 3-step team deliberation process before action execution
-- Full team strategy proposals with reasoning
-- Democratic voting on complete team plans
-- Shared memory of all battlefield events
+**LLM_config.json:** Model provider and parameters for each agent
 
-**Beta Fleet (Individual Decisions):**
-- No team communication or deliberation
-- Individual memory and decision making
-- Same information access but no coordination
+**battleship_config.json:** 
+- `team_coordination: true` enables deliberation (Alpha)
+- `team_coordination: false` enables independent play (Beta)
 
-## 🗣️ Game Flow (Eliminating Turn Order Bias)
+---
 
-### Phase 1: Team Alpha Deliberation (3 Steps)
+## Citation
 
-While Team Beta waits on standby:
+If you use this testbed, please cite:
 
-#### Step 1: Team Strategy Proposals (Broadcast)
-
-- All 3 Alpha agents simultaneously propose complete team strategies
-- Each proposal includes specific actions for ALL team members
-- Format: `PROPOSAL: player_a1 BOMB E5, player_a2 MOVE LEFT, player_a3 BOMB F6 - [50 word reasoning]`
-- Reasoning should consider: game rules, strategy, individual ship safety, team coordination, maximizing firepower
-
-#### Step 2: Democratic Voting
-
-- Each Alpha agent votes for ONE complete team plan (can vote for their own)
-- Agents consider both personal ship safety AND team victory
-- Format: `VOTE: [player_name]'s plan - [brief reasoning]`
-
-#### Step 3: Plan Selection
-
-- Majority vote wins (2/3 or 3/3)
-- Tie-breaking: Random selection between tied plans
-- Selected plan becomes Alpha's actions for simultaneous execution
-
-### Phase 2: Team Beta Individual Decisions
-
-- Each Beta agent makes independent decisions (no communication)
-- Same battlefield information as Alpha but no coordination
-- Individual memory only
-
-### Phase 3: Simultaneous Execution
-
-- Both teams execute their chosen actions at exactly the same time
-- No turn order bias - all BOMB and MOVE actions processed simultaneously
-- Results applied and new round begins
-
-## ⚙️ Implementation Specifications
-
-### Team Alpha Communication Architecture
-
-- **Step 1:** GroupChat broadcast - all agents propose simultaneously
-- **Step 2:** Sequential voting - each agent votes for one plan
-- **Step 3:** System determines majority winner, random tie-breaking
-- **Timing:** Beta team waits until Alpha completes all 3 steps
-
-### Team Beta Decision Architecture
-
-- **Individual prompts:** Each agent receives context and chooses action independently
-- **No communication:** Pure individual decision-making
-- **Parallel processing:** All Beta decisions can be made simultaneously
-
-### Simultaneous Execution System
-
-- **Action Collection:** Gather final actions from both teams
-- **Conflict Resolution:** Handle duplicate bombing coordinates (both teams can bomb same spot)
-- **Synchronous Processing:** Apply all BOMB and MOVE actions at once
-- **Result Broadcasting:** Inform all agents of round results
-
-### Agent Incentive Structure
-
-- Team Victory: +100 points per agent
-- Individual Ship Survival: +20 points
-- Team Coordination Bonus (Alpha only): +5 points for effective proposals/votes
-- Natural consequences for poor coordination (wasted attacks, missed opportunities)
-
-### Memory Management
-
-- **Alpha Team:** Shared memory of all deliberations, proposals, votes, and battlefield events
-- **Beta Team:** Individual memory only - each agent tracks their own observations
-- **Global Events:** All BOMB results, MOVE results, eliminations recorded for analysis
-- **Battlefield Intel:** Explicit lists of attacked coordinates provided to prevent wasteful targeting
-
-## 🛠️ Detailed Implementation Requirements
-
-### Core Game Engine Updates
-
-#### Remove Turn-Based Structure
-
-- Replace alternating team turns with simultaneous execution
-- Implement two-phase structure: Decision → Execution
-
-#### Alpha Deliberation Phase
-
-```python
-async def alpha_deliberation_phase(team_members):
-    # Step 1: Collect team strategy proposals
-    proposals = await collect_team_proposals(team_members)
-    
-    # Step 2: Conduct voting
-    votes = await conduct_voting(team_members, proposals)
-    
-    # Step 3: Determine winning plan
-    winning_plan = determine_majority_winner(votes)
-    
-    return parse_actions_from_plan(winning_plan)
+```
+@misc{llm-agent-network,
+  title={LLM Agent Network: Coordination Effects in Multi-Agent Systems},
+  year={2025},
+  note={Work in progress}
+}
 ```
 
-#### Beta Individual Phase
+---
 
-```python
-async def beta_individual_phase(team_members):
-    # Parallel individual decisions
-    actions = await gather_individual_decisions(team_members)
-    return actions
-```
-
-#### Simultaneous Execution
-
-```python
-async def execute_simultaneous_actions(alpha_actions, beta_actions):
-    # Process all BOMB actions from both teams
-    # Process all MOVE actions from both teams
-    # Apply results and update game state
-    # Broadcast results to all agents
-```
-
-### Communication Protocol Implementation
-
-#### Alpha Step 1 - Team Proposals
-
-- Prompt: "Propose a complete strategy for your entire team. Include specific BOMB/MOVE actions for each teammate and 50-word reasoning considering game rules, strategy, ship safety, and team coordination."
-- Collection: Gather all 3 proposals simultaneously
-- Validation: Ensure each proposal specifies actions for all team members
-
-#### Alpha Step 2 - Voting
-
-- Present all proposals to each agent
-- Prompt: "Vote for ONE complete team plan. Consider ship survival, team firepower preservation, and strategic coordination for team victory."
-- Collection: Gather votes sequentially or simultaneously
-- Validation: Each agent votes for exactly one plan
-
-#### Alpha Step 3 - Plan Selection
-
-- Count votes for each proposal
-- Implement majority rule (simple majority of 3 agents)
-- Random tie-breaking for 3-way ties or 1-1-1 splits
-- Parse winning plan into individual PlayerAction objects
-
-### Agent Context and Prompting
-
-#### Rich Context Generation
-
-- Round number and game state
-- Own ship status and position
-- Team ship status and positions
-- Battlefield memory (hits, misses, eliminations)
-- Valid actions for own ship
-- Enemy team status (what's known)
-
-#### Alpha Proposal Prompts
-
-- Include full team context
-- Emphasize strategic thinking
-- Require consideration of all team members
-- 50-word reasoning requirement
-
-#### Beta Individual Prompts
-
-- Same battlefield information as Alpha
-- Emphasize individual decision-making
-- No team coordination information
-
-## Expected Research Outcomes
-
-If coordination hypothesis is correct:
-
-- Alpha teams show higher win rates due to strategic coordination
-- Alpha teams demonstrate more effective ship positioning and protection
-- Alpha teams exhibit better target prioritization and focus fire
-- Alpha proposals evolve in quality over multiple games
-- Voting patterns reveal agent learning and adaptation
-
-### Key Research Metrics
-
-- **Win Rate:** Alpha vs Beta across multiple games
-- **Coordination Effectiveness:** Quality of Alpha proposals and voting consensus
-- **Survival Rate:** Individual ship survival by team
-- **Tactical Efficiency:** Hit rates, target selection, resource utilization
-- **Emergent Behavior:** Evolution of strategies over multiple rounds
-
-### Experimental Controls
-
-- Same LLM models and configurations for both teams
-- Identical ship assignments and battlefield information
-- Same random seeds for reproducible results
-- Only difference: coordination method (deliberation vs individual)
-
-This design eliminates turn order bias while providing a clean test of whether structured team deliberation outperforms individual decision-making in strategic gameplay.
-
-## 🚀 Setup & Run
-
-### 1. Install Dependencies
-
-```bash
-pip install ag2[ollama] networkx
-```
-
-### 2. Start Local LLM
-
-```bash
-export OLLAMA_HOST=0.0.0.0:11435
-ollama serve &
-ollama run gpt-oss:120b  # or your preferred model
-```
-
-### 3. Configure
-
-- Edit `LLM_config.json` for your model settings
-- Set Alpha `"team_coordination": true`, Beta `"team_coordination": false`
-
-### 4. Run Experiment
-
-```bash
-# Single game
-python battleship_runner.py --seed 123
-
-# Multiple trials
-for s in $(seq 1 50); do
-  python battleship_runner.py --seed $s
-done
-```
+*This is an active research project. Results are preliminary and subject to change as we collect more data.*
