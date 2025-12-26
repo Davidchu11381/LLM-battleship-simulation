@@ -33,21 +33,23 @@ We built a **Dynamic Battleship** testbed that isolates coordination effects:
 - No communication, no shared planning
 - Parallel decision-making
 
-## Preliminary Results (n = 22)
+## Results (n = 73)
 
-> **Note:** This is an ongoing experiment. Results below are preliminary and require additional trials for statistical confirmation. We are actively running more simulations and refining the experimental protocol.
+Loaded 73 valid games, skipped 29 error/incomplete games.
 
 ### Summary Table
 
 | Metric | Alpha (Coordinated) | Beta (Independent) | p-value |
 |--------|---------------------|-------------------|---------|
-| Win Rate | **68.2%** (15/22) | 31.8% (7/22) | 0.134 |
-| Ship Survival | **56.1%** | 24.2% | 0.008** |
-| Repeated Targets/Game | **2.86** | 13.41 | <0.001*** |
-| Offense Ratio | 88.1% | 96.2% | <0.001*** |
-| First Elimination | 5 games | 17 games | - |
+| Win Rate | 54.8% (40/73) | 45.2% (33/73) | 0.483 |
+| Ship Survival | **44.7%** | 27.9% | 0.014* |
+| Repeated Targets/Game | **3.01** | 16.22 | <0.001*** |
+| Offense Ratio | 85.9% | 94.7% | <0.001*** |
+| Hit Rate | 13.3% | 11.5% | 0.072 |
+| Kills/Game | 2.16 | 2.23 | - |
+| First Elimination | 20 games | 53 games | - |
 
-Effect size (Cohen's h): 0.74 (large)
+Effect size for win rate (Cohen's h): 0.19 (small)
 
 ![Coordination Analysis](plots/coordination_analysis.png)
 
@@ -55,42 +57,50 @@ Effect size (Cohen's h): 0.74 (large)
 
 **RQ1: Does coordination improve performance?**
 
-The coordinated team (Alpha) wins 68% of games compared to 32% for independent agents. While not yet statistically significant (p = 0.134) due to limited sample size, the effect size is large (h = 0.74). Critically, survival rate shows a significant difference: coordinated teams preserve 56% of ships vs. 24% for independent teams (p = 0.008).
+No. The coordinated team (Alpha) wins 55% of games compared to 45% for independent agents, but this difference is not statistically significant (p = 0.483, 95% CI: [42.7%, 66.5%]). The effect size is small (h = 0.19). **Coordination does not translate to more wins.**
+
+However, coordination does improve *survival*: coordinated teams preserve 45% of ships vs. 28% for independent teams (p = 0.014). Teams that coordinate lose fewer agents even when they don't win.
 
 **RQ2: What mechanisms drive the difference?**
 
-The clearest finding is **targeting efficiency**. Independent agents waste nearly 5x more bombs on previously-targeted coordinates (13.4 vs 2.9 repeated targets per game, p < 0.001). This suggests coordination's primary benefit is *collective memory* and *action deconfliction*, not improved individual decision quality.
+The clearest finding is **targeting efficiency**. Independent agents waste over 5x more bombs on previously-targeted coordinates (16.2 vs 3.0 repeated targets per game, p < 0.001). This is coordination's primary measurable benefit: *collective memory* and *action deconfliction*.
 
-Supporting this interpretation: hit rates are nearly identical (13.5% vs 11.9%, p = 0.76). When agents do shoot at new targets, they perform equally well. Coordination doesn't make agents smarter; it prevents them from duplicating effort.
+Critically, hit rates are nearly identical (13.3% vs 11.5%, p = 0.072). When agents shoot at new targets, they perform equally well. Kill counts are also equivalent (2.16 vs 2.23 per game). **Coordination doesn't make agents smarter or more lethal; it only prevents them from duplicating effort.**
+
+The efficiency gains don't convert to wins because Beta compensates through sheer volume. Despite wasting shots on repeated targets, Beta fires nearly as many total bombs (4421 vs 4522) and achieves comparable kills.
 
 **RQ3: How does coordination affect strategy?**
 
-Coordinated teams allocate more resources to defense. Alpha uses 202 moves across all games vs. Beta's 64 (offense ratio: 88% vs 96%, p < 0.001). This defensive flexibility likely explains the survival gap. Beta's near-exclusive focus on offense (96%) means they rarely evade incoming attacks.
+Coordinated teams allocate more resources to defense. Alpha uses 789 moves vs. Beta's 314 (offense ratio: 86% vs 95%, p < 0.001). This defensive flexibility explains the survival gap but not a win rate advantage.
 
-The first-elimination data reinforces this: Beta loses a player first in 17/22 games (77%). Coordination provides early-game protection.
+The first-elimination data is striking: Beta loses a player first in 53/73 games (73%). Coordination provides early-game protection. Yet this advantage dissipates over the course of the game.
 
 ### Interpretation
 
-Coordination benefits emerge not from better individual reasoning but from **collective resource allocation**:
+Coordination benefits are real but narrow:
 
-1. **Deconfliction:** Deliberation prevents multiple agents from targeting the same coordinate
-2. **Strategic balance:** Shared planning enables offense/defense tradeoffs that independent agents miss
-3. **Early protection:** Coordinated defense reduces first-blood disadvantage
+1. **Deconfliction:** Deliberation prevents multiple agents from targeting the same coordinate (5x fewer wasted shots)
+2. **Strategic balance:** Shared planning enables defense allocation that independent agents neglect
+3. **Early protection:** Coordinated teams rarely lose the first player
 
-## Limitations and Ongoing Work
+However, these benefits don't compound into victories. Possible explanations:
 
-This project is **actively in development**. Current limitations include:
+- **Deliberation overhead:** The propose-critique-vote cycle may slow Alpha's tempo, allowing Beta to compensate
+- **Diminishing returns:** Once deconfliction is achieved, additional coordination adds little value
+- **Offense dominance:** In this game, raw aggression may be as effective as strategic balance
 
-- **Sample size:** n = 22 valid games is insufficient for definitive conclusions on win rate. We estimate needing n > 50 for adequate statistical power.
-- **Error rate:** 29/51 games (57%) ended in errors or timeouts, indicating system stability issues being addressed.
-- **Single model:** Results are from one LLM configuration. Generalization across models is untested.
-- **Fixed protocol:** Only one coordination mechanism (propose-critique-vote) has been evaluated.
+## Limitations and Future Work
+
+- **Game-specific:** Results may not generalize beyond Battleship's mechanics
+- **Single model:** Results are from one LLM configuration (generalization untested)
+- **Fixed protocol:** Only one coordination mechanism (propose-critique-vote) has been evaluated
+- **Invalid game rate:** 29/102 games (28%) were invalid due to errors or incompleteness
 
 **Planned extensions:**
-- Scale to 100+ valid trials
-- Test alternative coordination protocols (e.g., hierarchical, emergent)
+- Test alternative coordination protocols (hierarchical, emergent, minimal)
 - Vary team sizes and ship configurations
 - Cross-model experiments
+- Investigate why efficiency gains don't convert to wins
 
 ---
 
@@ -160,7 +170,3 @@ If you use this testbed, please cite:
   note={Work in progress}
 }
 ```
-
----
-
-*This is an active research project. Results are preliminary and subject to change as we collect more data.*
